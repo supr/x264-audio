@@ -44,7 +44,16 @@ typedef struct
     int cur_width;
     int cur_height;
     enum PixelFormat cur_pix_fmt;
+
+    int aud_stream_id;
+    AVPacketList *aud_first_pkt, *aud_last_pkt;
+    int aud_pktcount;
+    int aud_size;
+    AVPacket aud_pkt, aud_pkt_temp;
+    AVRational *aud_base;
 } lavf_hnd_t;
+
+#define AUDIO_BUFSIZE (AVCODEC_MAX_AUDIO_FRAME_SIZE*3/2)
 
 typedef struct
 {
@@ -73,6 +82,84 @@ static int check_swscale( lavf_hnd_t *h, AVCodecContext *c, int i_frame )
         return -1;
     }
     return 0;
+}
+
+static int enqueue_packet( lavf_hnd_t *h, AVPacket *pkt )
+{
+    AVPacketList *pkt1 = av_malloc(sizeof(AVPacketList));
+    if( !pkt1 || av_dup_packet(pkt) < 0 )
+    {
+        return -1;
+    }
+    pkt1->pkt = *pkt;
+    pkt1->next = NULL;
+
+    if( !h->aud_last_pkt )
+        h->aud_first_pkt = pkt1;
+    else
+        h->aud_last_pkt->next = pkt1;
+    h->aud_last_pkt = pkt1;
+    h->aud_pktcount++;
+    h->aud_size += pkt1->pkt.size;
+
+    return 0;
+}
+
+static int dequeue_packet( lavf_hnd_t *h, AVPacket *pkt )
+{
+    AVPacketList *pkt1 = h->aud_first_pkt;
+    if (pkt1) {
+        h->aud_first_pkt = pkt1->next;
+        if( !h->aud_first_pkt )
+            h->aud_last_pkt = NULL;
+        h->aud_pktcount--;
+        h->aud_size -= pkt1->pkt.size;
+        *pkt = pkt1->pkt;
+        av_free(pkt1);
+        return 1;
+    }
+    return 0;
+}
+
+static int decode_audio( lavf_hnd_t *h, int16_t *buf, int *buflen ) {
+    if( h->aud_stream_id < 0 )
+        return -3;
+    
+    AVCodecContext *ac = h->lavf->streams[h->aud_stream_id]->codec;
+    AVPacket *pkt = &h->aud_pkt;
+    AVPacket *pkt_temp = &h->aud_pkt_temp;
+
+    int len = 0, datalen = 0;
+
+    while( pkt_temp->size > 0 )
+    {
+        datalen = *buflen;
+        len = avcodec_decode_audio3( ac, buf, &datalen, pkt_temp);
+
+        if( len < 0 ) {
+            pkt_temp->size = 0;
+            break;
+        }
+
+        pkt_temp->data += len;
+        pkt_temp->size -= len;
+
+        if( datalen < 0 )
+            continue;
+
+        *buflen = datalen;
+        return pkt->dts != AV_NOPTS_VALUE ? pkt->dts * 1000 / h->aud_base->den : 0;
+    }
+    if( pkt->data )
+        av_free_packet( pkt );
+
+    if( !dequeue_packet( h, pkt ) )
+        return -2;
+
+    pkt_temp->data = pkt->data;
+    pkt_temp->size = pkt->size;
+
+    return -1;
 }
 
 static int read_frame_internal( x264_picture_t *p_pic, lavf_hnd_t *h, int i_frame, video_info_t *info )
@@ -108,6 +195,8 @@ static int read_frame_internal( x264_picture_t *p_pic, lavf_hnd_t *h, int i_fram
                 if( avcodec_decode_video2( c, frame, &finished, pkt ) < 0 )
                     fprintf( stderr, "lavf [warning]: video decoding failed on frame %d\n", h->next_frame );
             }
+            else if( pkt->stream_index == h->aud_stream_id )
+                enqueue_packet( h, pkt );
         if( !finished )
         {
             if( avcodec_decode_video2( c, frame, &finished, pkt ) < 0 )
@@ -227,6 +316,34 @@ static int open_file( char *psz_filename, hnd_t *p_handle, video_info_t *info, c
     info->sar_width  = c->sample_aspect_ratio.num;
     *p_handle = h;
 
+    i = 0;
+    while( i < h->lavf->nb_streams && h->lavf->streams[i]->codec->codec_type != CODEC_TYPE_AUDIO )
+        i++;
+
+    if ( i == h->lavf->nb_streams )
+        i = -1;
+    h->aud_stream_id = i;
+    if ( i >= 0 )
+    {
+        AVCodecContext *ac = h->lavf->streams[i]->codec;
+
+        if( avcodec_open( ac, avcodec_find_decoder( ac->codec_id ) ) )
+        {
+            fprintf( stderr, "lavf [warning]: could not find decoder for audio stream\n");
+            h->aud_stream_id = -1;
+        }
+        else
+        {
+            h->aud_base = &h->lavf->streams[i]->time_base;
+            fprintf( stderr, "lavf [debug]: audio codec id %d\n", ac->codec_id );
+            fprintf( stderr, "lavf [debug]: time_base: %d / %d\n", h->aud_base->num, h->aud_base->den );
+        }
+    }
+    else
+    {
+        fprintf( stderr, "lavf [debug]: could not find audio stream\n" );
+    }
+
     return 0;
 }
 
@@ -269,4 +386,4 @@ static int close_file( hnd_t handle )
     return 0;
 }
 
-const cli_input_t lavf_input = { open_file, get_frame_total, picture_alloc, read_frame, NULL, picture_clean, close_file };
+const cli_input_t lavf_input = { open_file, get_frame_total, picture_alloc, read_frame, NULL, picture_clean, close_file, AUDIO_BUFSIZE, decode_audio };

@@ -704,7 +704,7 @@ static int select_output( const char *muxer, char *filename, x264_param_t *param
     return 0;
 }
 
-static int select_input( const char *demuxer, char *used_demuxer, char *filename,
+int select_input( const char *demuxer, char *used_demuxer, char *filename,
                          hnd_t *p_handle, video_info_t *info, cli_input_opt_t *opt )
 {
     const char *ext = get_filename_extension( filename );
@@ -1070,6 +1070,7 @@ generic_option:
         param->vui.i_sar_height = info.sar_height;
     }
 
+#if 0
 #ifdef HAVE_PTHREAD
     if( b_thread_input || param->i_threads > 1
         || (param->i_threads == X264_THREADS_AUTO && x264_cpu_num_processors() > 1) )
@@ -1080,10 +1081,12 @@ generic_option:
             return -1;
         }
         else
+        {
             input = thread_input;
+        }
     }
 #endif
-
+#endif
 
     /* Automatically reduce reference frame count to match the user's target level
      * if the user didn't explicitly set a reference frame count. */
@@ -1148,7 +1151,40 @@ static void parse_qpfile( cli_opt_t *opt, x264_picture_t *pic, int i_frame )
  * Encode:
  *****************************************************************************/
 
-static int  Encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_pts )
+static int  Encode_audio( hnd_t hin, hnd_t hout )
+{
+    // TODO: encode to something
+    // TODO: support direct stream copy
+    // write raw PCM for now
+
+    if( !output.write_audio ) {
+        fprintf( stderr, "x264 [error]: audio is not supported in this muxer!\n" );
+        return -1;
+    }
+
+    static int     aud_samples_len = -1;
+    static int16_t *aud_samples    = NULL;
+    if( aud_samples == NULL )
+    {
+        aud_samples_len = sizeof(int16_t) * input.min_audio_buf_len;
+        aud_samples     = malloc(aud_samples_len);
+    }
+
+    int len, dts, written_bytes = 0;
+    do {
+        len = aud_samples_len;
+        while( ( dts = input.decode_audio( hin, aud_samples, &len ) ) == -1 )
+            ;
+        if( dts >= 0 && len > 0 )
+            written_bytes += output.write_audio( hout, dts, (uint8_t*) aud_samples, len );
+        else
+            break;
+    } while(1);
+
+    return written_bytes;
+}
+
+static int  Encode_frame( x264_t *h, hnd_t hin, hnd_t hout, x264_picture_t *pic, int64_t *last_pts )
 {
     x264_picture_t pic_out;
     x264_nal_t *nal;
@@ -1307,12 +1343,15 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
             pic.i_qpplus1 = 0;
         }
 
-        i_frame_size = Encode_frame( h, opt->hout, &pic, &last_pts );
+        i_frame_size = Encode_frame( h, opt->hin, opt->hout, &pic, &last_pts );
         if( i_frame_size < 0 )
             return -1;
         i_file += i_frame_size;
         if( i_frame_size )
             i_frame_output++;
+
+        if( input.decode_audio )
+            Encode_audio( opt->hin, opt->hout );
 
         i_frame++;
 
@@ -1326,7 +1365,7 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
     /* Flush delayed frames */
     while( !b_ctrl_c && x264_encoder_delayed_frames( h ) )
     {
-        i_frame_size = Encode_frame( h, opt->hout, NULL, &last_pts );
+        i_frame_size = Encode_frame( h, opt->hin, opt->hout, NULL, &last_pts );
         if( i_frame_size < 0 )
             return -1;
         i_file += i_frame_size;
@@ -1334,6 +1373,8 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
             i_frame_output++;
         if( opt->b_progress && i_frame_output % i_update_interval == 0 && i_frame_output )
             Print_status( i_start, i_frame_output, i_frame_total, i_file, param, last_pts );
+        if( input.decode_audio )
+            Encode_audio( opt->hin, opt->hout );
     }
     if( pts_warning_cnt >= MAX_PTS_WARNING && param->i_log_level < X264_LOG_DEBUG )
         fprintf( stderr, "x264 [warning]: %d suppressed nonmonotonic pts warnings\n", pts_warning_cnt-MAX_PTS_WARNING );

@@ -58,6 +58,8 @@ typedef struct
     int (*release_frame)( x264_picture_t *pic, hnd_t handle );
     void (*picture_clean)( x264_picture_t *pic );
     int (*close_file)( hnd_t handle );
+    int min_audio_buf_len;
+    int (*decode_audio)( hnd_t handle, int16_t *buffer, int *buffer_length ); // returns dts
 } cli_input_t;
 
 extern const cli_input_t yuv_input;

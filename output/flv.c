@@ -56,11 +56,11 @@ typedef struct
 
 static int write_header( flv_buffer *c )
 {
-    x264_put_tag( c, "FLV" ); // Signature
-    x264_put_byte( c, 1 );    // Version
-    x264_put_byte( c, 1 );    // Video Only
-    x264_put_be32( c, 9 );    // DataOffset
-    x264_put_be32( c, 0 );    // PreviousTagSize0
+    x264_put_tag( c, "FLV" );  // Signature
+    x264_put_byte( c, 1 );     // Version
+    x264_put_byte( c, 1 | 4 ); // Video Only (HACK: Video + Audio)
+    x264_put_be32( c, 9 );     // DataOffset
+    x264_put_be32( c, 0 );     // PreviousTagSize0
 
     return flv_flush_data( c );
 }
@@ -131,6 +131,16 @@ static int set_param( hnd_t handle, x264_param_t *p_param )
     x264_put_amf_string( c, "videodatarate" );
     p_flv->i_bitrate_pos = c->d_cur + c->d_total + 1;
     x264_put_amf_double( c, 0 ); // written at end of encoding
+
+    // HACK: audio hack
+    x264_put_amf_string( c, "audiocodecid" );
+    x264_put_amf_double( c, FLV_CODECID_PCM >> FLV_AUDIO_CODECID_OFFSET );
+    x264_put_amf_string( c, "audiosamplesize" );
+    x264_put_amf_double( c, 16 );
+    x264_put_amf_string( c, "audiosamplerate" );
+    x264_put_amf_double( c, 44100 );
+    x264_put_amf_string( c, "stereo" );
+    x264_put_amf_bool  ( c, 1 );
 
     x264_put_amf_string( c, "" );
     x264_put_byte( c, AMF_END_OF_OBJECT );
@@ -207,6 +217,27 @@ static int write_headers( hnd_t handle, x264_nal_t *p_nal )
     return sei_size + sps_size + pps_size;
 }
 
+static int write_audio( hnd_t handle, int64_t dts, uint8_t *data, int len )
+{
+    flv_hnd_t *p_flv = handle;
+    flv_buffer *c = p_flv->c;
+
+    x264_put_byte( c, FLV_TAG_TYPE_AUDIO );
+    x264_put_be24( c, 1 + len ); // size
+    x264_put_be24( c, (int32_t) dts ); // DTS
+    x264_put_byte( c, (int32_t) dts >> 24 ); // DTS high 8 bits
+    x264_put_be24( c, 0 );
+
+    x264_put_byte( c, FLV_CODECID_PCM | FLV_SAMPLERATE_44100HZ | FLV_SAMPLESSIZE_16BIT | FLV_STEREO);
+    flv_append_data( c, data, len );
+
+    x264_put_be32( c, 11 + 1 + len );
+
+    CHECK( flv_flush_data( c ) );
+   
+    return 1 + len;
+}
+
 static int write_frame( hnd_t handle, uint8_t *p_nalu, int i_size, x264_picture_t *p_picture )
 {
     flv_hnd_t *p_flv = handle;
@@ -260,7 +291,7 @@ static int write_frame( hnd_t handle, uint8_t *p_nalu, int i_size, x264_picture_
     rewrite_amf_be24( c, length, p_flv->start - 10 );
     x264_put_be32( c, 11 + length ); // Last tag size
     CHECK( flv_flush_data( c ) );
-
+    
     p_flv->i_framenum++;
 
     return i_size;
@@ -305,4 +336,4 @@ static int close_file( hnd_t handle, int64_t largest_pts, int64_t second_largest
     return 0;
 }
 
-const cli_output_t flv_output = { open_file, set_param, write_headers, write_frame, close_file };
+const cli_output_t flv_output = { open_file, set_param, write_headers, write_frame, close_file, write_audio };

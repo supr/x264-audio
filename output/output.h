@@ -31,6 +31,7 @@ typedef struct
     int (*write_headers)( hnd_t handle, x264_nal_t *p_nal );
     int (*write_frame)( hnd_t handle, uint8_t *p_nal, int i_size, x264_picture_t *p_picture );
     int (*close_file)( hnd_t handle, int64_t largest_pts, int64_t second_largest_pts );
+    int (*write_audio)( hnd_t handle, int64_t dts, uint8_t *data, int data_len );
 } cli_output_t;
 
 extern const cli_output_t raw_output;
