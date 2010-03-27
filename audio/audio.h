@@ -19,6 +19,8 @@ typedef struct
     int samplefmt;
     int samplesize;
     int channels;
+    uint8_t *extradata;
+    int extradata_size;
 } audio_info_t;
 
 typedef struct audio_hnd_t

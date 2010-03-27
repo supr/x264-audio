@@ -187,7 +187,10 @@ static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
             return 0;
         }
 
-        h->framesize = ctx->frame_size;
+        info->extradata      = ctx->extradata;
+        info->extradata_size = ctx->extradata_size;
+
+        h->framesize = ctx->frame_size * ctx->channels;
         h->encoder   = calloc( 1, sizeof( encoder_t ) );
         ((encoder_t*) h->encoder)->ctx = ctx;
     }
