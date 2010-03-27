@@ -168,11 +168,18 @@ static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
         info->codec_id = codec->id;
 
         AVCodecContext *ctx = avcodec_alloc_context();
-        ctx->sample_rate = h->info->samplerate;
-        ctx->sample_fmt  = h->info->samplefmt;
-        ctx->channels    = h->info->channels;
-        ctx->bit_rate    = opt->bitrate * 1000;
+        ctx->sample_rate = info->samplerate;
+        ctx->sample_fmt  = info->samplefmt;
+        ctx->channels    = info->channels;
         ctx->flags2     |= CODEC_FLAG2_BIT_RESERVOIR; // mp3
+
+        if( opt->quality_mode )
+        {
+            ctx->flags         |= CODEC_FLAG_QSCALE;
+            ctx->global_quality = FF_QP2LAMBDA * opt->quality;
+        }
+        else
+            ctx->bit_rate = opt->bitrate * 1000;
 
         if( avcodec_open( ctx, codec ) < 0 )
         {

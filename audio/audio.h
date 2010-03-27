@@ -42,6 +42,8 @@ typedef struct
 {
     char *encoder_name;
     int bitrate;
+    int quality;
+    int quality_mode;
 } audio_opt_t;
 
 typedef struct
