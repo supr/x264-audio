@@ -157,6 +157,8 @@ static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
             opt->encoder_name = "libmp3lame";
         else if( !strcmp( opt->encoder_name, "vorbis" ) )
             opt->encoder_name = "libvorbis";
+        else if( !strcmp( opt->encoder_name, "aac" ) )
+            opt->encoder_name = "libfaac";
 
         AVCodec *codec = avcodec_find_encoder_by_name( opt->encoder_name );
 
@@ -172,6 +174,7 @@ static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
         ctx->sample_fmt  = info->samplefmt;
         ctx->channels    = info->channels;
         ctx->flags2     |= CODEC_FLAG2_BIT_RESERVOIR; // mp3
+        ctx->flags      |= CODEC_FLAG_GLOBAL_HEADER; // aac
 
         if( opt->quality_mode )
         {
