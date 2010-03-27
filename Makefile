@@ -32,6 +32,7 @@ endif
 
 ifneq ($(findstring LAVF_INPUT, $(CONFIG)),)
 SRCCLI += input/lavf.c
+SRCCLI += audio/audio.c audio/lavc.c
 endif
 
 ifneq ($(findstring FFMS_INPUT, $(CONFIG)),)

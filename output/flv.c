@@ -27,6 +27,16 @@ do {\
         return -1;\
 } while( 0 )
 
+
+typedef struct
+{
+    int header;
+    int codecid;
+    int samplesize;
+    int samplerate;
+    int stereo;
+} flv_audio_hnd_t;
+
 typedef struct
 {
     flv_buffer *c;
@@ -52,13 +62,15 @@ typedef struct
     int b_vfr_input;
 
     unsigned start;
+
+    flv_audio_hnd_t *audio;
 } flv_hnd_t;
 
 static int write_header( flv_buffer *c )
 {
     x264_put_tag( c, "FLV" ); // Signature
     x264_put_byte( c, 1 );    // Version
-    x264_put_byte( c, 1 );    // Video Only
+    x264_put_byte( c, 5 );    // Video + Audio
     x264_put_be32( c, 9 );    // DataOffset
     x264_put_be32( c, 0 );    // PreviousTagSize0
 
@@ -131,6 +143,19 @@ static int set_param( hnd_t handle, x264_param_t *p_param )
     x264_put_amf_string( c, "videodatarate" );
     p_flv->i_bitrate_pos = c->d_cur + c->d_total + 1;
     x264_put_amf_double( c, 0 ); // written at end of encoding
+
+    if( p_flv->audio )
+    {
+        flv_audio_hnd_t *a_flv = p_flv->audio;
+        x264_put_amf_string( c, "audiocodecid" );
+        x264_put_amf_double( c, a_flv->codecid );
+        x264_put_amf_string( c, "audiosamplesize" );
+        x264_put_amf_double( c, a_flv->samplesize );
+        x264_put_amf_string( c, "audiosamplerate" );
+        x264_put_amf_double( c, a_flv->samplerate );
+        x264_put_amf_string( c, "stereo" );
+        x264_put_amf_bool  ( c, a_flv->stereo );
+    }
 
     x264_put_amf_string( c, "" );
     x264_put_byte( c, AMF_END_OF_OBJECT );
@@ -205,6 +230,127 @@ static int write_headers( hnd_t handle, x264_nal_t *p_nal )
     CHECK( flv_flush_data( c ) );
 
     return sei_size + sps_size + pps_size;
+}
+
+static int write_audio( hnd_t handle, audio_hnd_t *audio, int64_t dts, uint8_t *data, int len )
+{
+    flv_hnd_t *p_flv = handle;
+    flv_audio_hnd_t *a_flv = p_flv->audio;
+    flv_buffer *c = p_flv->c;
+
+    if( !a_flv )
+    {
+        fprintf( stderr, "flv [error]: attempt to write audio without initialization!\n" );
+        return -1;
+    }
+
+    // Convert to miliseconds
+    dts = dts * 1000 / audio->time_base;
+
+    x264_put_byte( c, FLV_TAG_TYPE_AUDIO );
+    x264_put_be24( c, 1 + len ); // size
+    x264_put_be24( c, (int32_t) dts ); // DTS
+    x264_put_byte( c, (int32_t) dts >> 24 ); // DTS high 8 bits
+    x264_put_be24( c, 0 );
+
+    x264_put_byte( c, a_flv->header );
+    flv_append_data( c, data, len );
+
+    x264_put_be32( c, 11 + 1 + len );
+
+    CHECK( flv_flush_data( c ) );
+
+    return 1 + len;
+}
+
+static int init_audio( hnd_t *handle, audio_hnd_t *audio )
+{
+    if( !audio->enc_hnd )
+    {
+        fprintf( stderr, "flv [error]: cannot initialize audio for uninitailized encoder\n" );
+        return 0;
+    }
+    const char *codec_name = audio->enc_hnd->info->codec_name;
+    audio_info_t *info = audio->enc_hnd->info;
+
+    flv_hnd_t       *p_flv = ( flv_hnd_t* ) handle;
+    flv_audio_hnd_t *a_flv = p_flv->audio = malloc( sizeof( flv_audio_hnd_t ) );
+
+    int header = 0;
+    if( !strcmp( codec_name, "mp3" ) || !strcmp( codec_name, "libmp3lame" ) )
+        a_flv->codecid = FLV_CODECID_MP3;
+    else if( !strcmp( codec_name, "aac" ) || !strcmp( codec_name, "libfaac" ) )
+        a_flv->codecid = FLV_CODECID_AAC;
+    else if( !strcmp( codec_name, "pcm" ) || !strcmp( codec_name, "raw" ) )
+        a_flv->codecid = FLV_CODECID_PCM;
+    else
+    {
+        fprintf( stderr, "flv [error]: unsupported audio codec %s\n", codec_name );
+        goto error;
+    }
+
+    header |= a_flv->codecid;
+
+    a_flv->codecid  >>= FLV_AUDIO_CODECID_OFFSET;
+    a_flv->samplerate = info->samplerate;
+    a_flv->samplesize = info->samplesize;
+    a_flv->stereo     = info->channels == 2;
+
+    switch( info->samplerate )
+    {
+    case 5512:
+    case 8000:
+        header |= FLV_SAMPLERATE_SPECIAL;
+        break;
+    case 11025:
+        header |= FLV_SAMPLERATE_11025HZ;
+        break;
+    case 22050:
+        header |= FLV_SAMPLERATE_22050HZ;
+        break;
+    case 44100:
+        header |= FLV_SAMPLERATE_44100HZ;
+        break;
+    default:
+        fprintf( stderr, "flv [error]: unsupported %dhz sample rate\n", info->samplerate );
+        goto error;
+    }
+
+    switch( info->samplesize )
+    {
+    case 1:
+        header |= FLV_SAMPLESSIZE_8BIT;
+        break;
+    case 2:
+        header |= FLV_SAMPLESSIZE_16BIT;
+        break;
+    default:
+        fprintf( stderr, "flv [error]: %d-bit audio not supported\n", info->samplesize * 8 );
+        goto error;
+    }
+
+    switch( info->channels )
+    {
+    case 1:
+        header |= FLV_MONO;
+        break;
+    case 2:
+        header |= FLV_STEREO;
+        break;
+    default:
+        fprintf( stderr, "flv [error]: %d-channel audio not supported\n", info->channels );
+        goto error;
+    }
+
+    a_flv->header = header;
+
+    return 1;
+
+error:
+    free( p_flv->audio );
+    p_flv->audio = NULL;
+
+    return 0;
 }
 
 static int write_frame( hnd_t handle, uint8_t *p_nalu, int i_size, x264_picture_t *p_picture )
@@ -305,4 +451,4 @@ static int close_file( hnd_t handle, int64_t largest_pts, int64_t second_largest
     return 0;
 }
 
-const cli_output_t flv_output = { open_file, set_param, write_headers, write_frame, close_file };
+const cli_output_t flv_output = { open_file, set_param, write_headers, write_frame, close_file, init_audio, write_audio };

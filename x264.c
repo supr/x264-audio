@@ -35,6 +35,8 @@
 #include "x264.h"
 #include "muxers.h"
 
+#include "audio/audio.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -56,6 +58,7 @@ typedef struct {
     int i_seek;
     hnd_t hin;
     hnd_t hout;
+    audio_hnd_t *audio;
     FILE *qpfile;
     FILE *tcfile_out;
     double timebase_convert_multiplier;
@@ -64,6 +67,7 @@ typedef struct {
 
 /* i/o file operation function pointer structs */
 cli_input_t input;
+cli_audio_t audio;
 static cli_output_t output;
 
 static const char * const demuxer_names[] =
@@ -791,6 +795,8 @@ static int select_output( const char *muxer, char *filename, x264_param_t *param
     return 0;
 }
 
+extern int thread_open_audio( hnd_t*, audio_hnd_t*, cli_audio_t*, int, int );
+
 static int select_input( const char *demuxer, char *used_demuxer, char *filename,
                          hnd_t *p_handle, video_info_t *info, cli_input_opt_t *opt )
 {
@@ -867,6 +873,9 @@ static int select_input( const char *demuxer, char *used_demuxer, char *filename
         }
     }
     strcpy( used_demuxer, module );
+
+    if( input.open_audio )
+        thread_input.open_audio = thread_open_audio;
 
     return 0;
 }
@@ -995,6 +1004,7 @@ static int Parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                     fprintf( stderr, "x264 [error]: can't open qpfile `%s'\n", optarg );
                     return -1;
                 }
+
                 else if( !x264_is_regular_file( opt->qpfile ) )
                 {
                     fprintf( stderr, "x264 [error]: qpfile incompatible with non-regular file `%s'\n", optarg );
@@ -1308,6 +1318,44 @@ static void parse_qpfile( cli_opt_t *opt, x264_picture_t *pic, int i_frame )
  * Encode:
  *****************************************************************************/
 
+static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout )
+{
+    if( !output.write_audio ) {
+        fprintf( stderr, "x264 [error]: audio is not supported in this muxer!\n" );
+        return -1;
+    }
+
+    static int aud_samples_len  = 0;
+    static uint8_t *aud_samples  = NULL;
+    static uint8_t *encoded_data = NULL;
+    if( aud_samples == NULL )
+    {
+        aud_samples_len = AUDIO_BUFSIZE * haud->info->channels * haud->info->samplesize;
+        aud_samples     = malloc( aud_samples_len );
+        encoded_data    = malloc( aud_samples_len );
+    }
+
+    int len, dts, written_bytes = 0, enclen;
+    do {
+        do
+        {
+            len = aud_samples_len;
+            len = audio.decode_audio( haud, aud_samples, len, &dts );
+        } while( len == AUDIO_AGAIN );
+        if( dts >= 0 && len > 0 )
+        {
+            enclen = aud_samples_len;
+            enclen = audio.encode_audio( haud, encoded_data, enclen, aud_samples, len );
+            if( enclen > 0 )
+                written_bytes += output.write_audio( hout, haud, dts, encoded_data, enclen );
+        }
+        else
+            break;
+    } while( 1 );
+
+    return written_bytes;
+}
+
 static int  Encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_pts )
 {
     x264_picture_t pic_out;
@@ -1384,6 +1432,36 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
         i_frame_total = param->i_frame_total;
     param->i_frame_total = i_frame_total;
     i_update_interval = i_frame_total ? x264_clip3( i_frame_total / 1000, 1, 10 ) : 10;
+
+    if( input.open_audio )
+    {
+        audio = lavc_audio;
+        opt->audio = ( audio_hnd_t* ) calloc( 1, sizeof( audio_hnd_t ) );
+        int track;
+        if( ( track = input.open_audio( opt->hin, opt->audio, &audio, TRACK_ANY, 0 ) ) >= 0 )
+        {
+            fprintf( stderr, "x264 [audio]: opened track %d, codec %s\n", track, opt->audio->info->codec_name );
+            audio_opt_t aopt = {
+                .encoder_name = "mp3",
+                .bitrate = 128
+            };
+            if( audio.open_encoder( opt->audio, &aopt ) &&
+                output.init_audio( opt->hout, opt->audio ) )
+            {
+                fprintf( stderr, "x264 [audio]: opened %s encoder\n", aopt.encoder_name );
+            }
+            else
+            {
+                audio.close_track( opt->audio );
+                free( opt->audio );
+                opt->audio = NULL;
+            }
+        }
+        else
+        {
+            fprintf( stderr, "x264 [audio]: error opening audio track\n" );
+        }
+    }
 
     /* set up pulldown */
     if( opt->i_pulldown && !param->b_vfr_input )
@@ -1509,6 +1587,9 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
         if( i_frame_size )
             i_frame_output++;
 
+        if( opt->audio )
+            Encode_audio( opt->audio, opt->hout );
+
         i_frame++;
 
         if( input.release_frame && input.release_frame( &pic, opt->hin ) )
@@ -1529,6 +1610,8 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
             i_frame_output++;
         if( opt->b_progress && i_frame_output % i_update_interval == 0 && i_frame_output )
             Print_status( i_start, i_frame_output, i_frame_total, i_file, param, last_pts );
+        if( opt->audio )
+            Encode_audio( opt->audio, opt->hout );
     }
     if( pts_warning_cnt >= MAX_PTS_WARNING && param->i_log_level < X264_LOG_DEBUG )
         fprintf( stderr, "x264 [warning]: %d suppressed nonmonotonic pts warnings\n", pts_warning_cnt-MAX_PTS_WARNING );

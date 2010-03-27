@@ -22,6 +22,7 @@
  *****************************************************************************/
 
 #include "muxers.h"
+#include "audio/audio.h"
 #undef DECLARE_ALIGNED
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
@@ -44,6 +45,8 @@ typedef struct
     int cur_width;
     int cur_height;
     enum PixelFormat cur_pix_fmt;
+
+    audio_hnd_t *audio;
 } lavf_hnd_t;
 
 typedef struct
@@ -108,6 +111,8 @@ static int read_frame_internal( x264_picture_t *p_pic, lavf_hnd_t *h, int i_fram
                 if( avcodec_decode_video2( c, frame, &finished, pkt ) < 0 )
                     fprintf( stderr, "lavf [warning]: video decoding failed on frame %d\n", h->next_frame );
             }
+            else if( h->audio && pkt->stream_index == h->audio->track )
+                audio_queue_avpacket( h->audio, pkt );
         if( !finished )
         {
             if( avcodec_decode_video2( c, frame, &finished, pkt ) < 0 )
@@ -269,4 +274,11 @@ static int close_file( hnd_t handle )
     return 0;
 }
 
-const cli_input_t lavf_input = { open_file, get_frame_total, picture_alloc, read_frame, NULL, picture_clean, close_file };
+static int open_audio( hnd_t *handle, audio_hnd_t *ah, cli_audio_t *audio, int track, int copy )
+{
+    lavf_hnd_t *h = ( lavf_hnd_t* ) handle;
+    h->audio = ah;
+    return audio->open_track_lavf( ah, h->lavf, track, copy );
+}
+
+const cli_input_t lavf_input = { open_file, get_frame_total, picture_alloc, read_frame, NULL, picture_clean, close_file, open_audio };
