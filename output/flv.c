@@ -35,6 +35,8 @@ typedef struct
     int samplesize;
     int samplerate;
     int stereo;
+    uint8_t *extradata;
+    int extradata_size;
 } flv_audio_hnd_t;
 
 typedef struct
@@ -148,7 +150,7 @@ static int set_param( hnd_t handle, x264_param_t *p_param )
     {
         flv_audio_hnd_t *a_flv = p_flv->audio;
         x264_put_amf_string( c, "audiocodecid" );
-        x264_put_amf_double( c, a_flv->codecid );
+        x264_put_amf_double( c, a_flv->codecid >> FLV_AUDIO_CODECID_OFFSET );
         x264_put_amf_string( c, "audiosamplesize" );
         x264_put_amf_double( c, a_flv->samplesize );
         x264_put_amf_string( c, "audiosamplerate" );
@@ -177,6 +179,7 @@ static int set_param( hnd_t handle, x264_param_t *p_param )
 static int write_headers( hnd_t handle, x264_nal_t *p_nal )
 {
     flv_hnd_t *p_flv = handle;
+    flv_audio_hnd_t *a_flv = p_flv->audio;
     flv_buffer *c = p_flv->c;
 
     int sps_size = p_nal[0].i_payload;
@@ -227,6 +230,21 @@ static int write_headers( hnd_t handle, x264_nal_t *p_nal )
     unsigned length = c->d_cur - p_flv->start;
     rewrite_amf_be24( c, length, p_flv->start - 10 );
     x264_put_be32( c, length + 11 ); // Last tag size
+
+    if( a_flv && a_flv->codecid == FLV_CODECID_AAC && a_flv->extradata_size )
+    {
+        x264_put_byte( c, FLV_TAG_TYPE_AUDIO );
+        x264_put_be24( c, 2 + a_flv->extradata_size );
+        x264_put_be24( c, 0 );
+        x264_put_byte( c, 0 );
+        x264_put_be24( c, 0 );
+
+        x264_put_byte( c, a_flv->header );
+        x264_put_byte( c, 0 );
+        flv_append_data( c, a_flv->extradata, a_flv->extradata_size );
+        x264_put_be32( c, 11 + 2 + a_flv->extradata_size );
+    }
+
     CHECK( flv_flush_data( c ) );
 
     return sei_size + sps_size + pps_size;
@@ -246,21 +264,25 @@ static int write_audio( hnd_t handle, audio_hnd_t *audio, int64_t dts, uint8_t *
 
     // Convert to miliseconds
     dts = dts * 1000 / audio->time_base;
+    int aac = a_flv->codecid == FLV_CODECID_AAC;
 
     x264_put_byte( c, FLV_TAG_TYPE_AUDIO );
-    x264_put_be24( c, 1 + len ); // size
+    x264_put_be24( c, 1 + aac + len ); // size
     x264_put_be24( c, (int32_t) dts ); // DTS
     x264_put_byte( c, (int32_t) dts >> 24 ); // DTS high 8 bits
     x264_put_be24( c, 0 );
 
     x264_put_byte( c, a_flv->header );
+
+    if( aac )
+        x264_put_byte( c, 1 );
     flv_append_data( c, data, len );
 
-    x264_put_be32( c, 11 + 1 + len );
+    x264_put_be32( c, 11 + 1 + aac + len );
 
     CHECK( flv_flush_data( c ) );
 
-    return 1 + len;
+    return 1 + len + aac;
 }
 
 static int init_audio( hnd_t *handle, audio_hnd_t *audio )
@@ -280,7 +302,11 @@ static int init_audio( hnd_t *handle, audio_hnd_t *audio )
     if( !strcmp( codec_name, "mp3" ) || !strcmp( codec_name, "libmp3lame" ) )
         a_flv->codecid = FLV_CODECID_MP3;
     else if( !strcmp( codec_name, "aac" ) || !strcmp( codec_name, "libfaac" ) )
-        a_flv->codecid = FLV_CODECID_AAC;
+    {
+        a_flv->codecid        = FLV_CODECID_AAC;
+        a_flv->extradata_size = info->extradata_size;
+        a_flv->extradata      = info->extradata;
+    }
     else if( !strcmp( codec_name, "pcm" ) || !strcmp( codec_name, "raw" ) )
         a_flv->codecid = FLV_CODECID_PCM;
     else
@@ -291,7 +317,6 @@ static int init_audio( hnd_t *handle, audio_hnd_t *audio )
 
     header |= a_flv->codecid;
 
-    a_flv->codecid  >>= FLV_AUDIO_CODECID_OFFSET;
     a_flv->samplerate = info->samplerate;
     a_flv->samplesize = info->samplesize;
     a_flv->stereo     = info->channels == 2;
