@@ -211,7 +211,7 @@ static int encode_audio( audio_hnd_t *h, uint8_t *outbuf, int outbuflen, uint8_t
         memcpy( outbuf, inbuf, inbuflen );
         return inbuflen;
     }
-    int expected_inbuflen = h->framesize * h->enc_hnd->info->channels * h->enc_hnd->info->samplesize;
+    int expected_inbuflen = h->framesize * h->enc_hnd->info->samplesize;
     if( inbuflen < expected_inbuflen )
         return AUDIO_ERROR;
 
