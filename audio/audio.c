@@ -19,12 +19,13 @@ int audio_queue_avpacket( audio_hnd_t *h, AVPacket *pkt )
     return 0;
 }
 
-int audio_queue_rawdata( audio_hnd_t *h, int8_t *buf, int buflen, int64_t dts )
+int audio_queue_rawdata( audio_hnd_t *h, uint8_t *buf, int buflen, int64_t dts )
 {
     AVPacket pkt;
     av_init_packet( &pkt );
     pkt.dts = dts * h->time_base;
     pkt.size = buflen;
+    pkt.data = malloc( buflen );
     memcpy( pkt.data, buf, buflen );
 
     return audio_queue_avpacket( h, &pkt );

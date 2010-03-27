@@ -81,7 +81,7 @@ int audio_queue_avpacket( audio_hnd_t *handle, AVPacket *pkt );
  * The .data is memcpyed from the buffer.
  * @returns the result of audio_queue_avpacket
  */
-int audio_queue_rawdata( audio_hnd_t *handle, int8_t *buffer, int buffer_length, int64_t dts );
+int audio_queue_rawdata( audio_hnd_t *handle, uint8_t *buffer, int buffer_length, int64_t dts );
 /**
  * Gets the next AVPacket in the decoding queue and puts in pkt.
  * @returns 1 on success, 0 if the queue is empty
