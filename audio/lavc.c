@@ -150,7 +150,8 @@ static int decode_audio( audio_hnd_t *h, uint8_t *buf, int buflen ) {
     if( h->track < 0 )
         return AUDIO_ERROR;
 
-    AVCodecContext *ac = ( ( opaque_t* ) h->opaque )->lavf->streams[h->track]->codec;
+    opaque_t *o = ( opaque_t* ) h->opaque;
+    AVCodecContext *ac = o->lavf->streams[h->track]->codec;
     AVPacket *pkt = &h->pkt;
     AVPacket *pkt_temp = &h->pkt_temp;
 
