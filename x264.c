@@ -1580,7 +1580,7 @@ static int  Encode_frame( x264_t *h, cli_opt_t *cli, x264_param_t *param, x264_p
         {
             int64_t maxdts = ( int64_t ) ( to_time_base( pic_out.i_dts, cli->audio->time_base ) * ( ( double ) param->i_timebase_num / param->i_timebase_den ) + 0.5 );
             int64_t ret = cli->audio->last_pkt ? cli->audio->last_pkt->pkt.dts : ( cli->audio->external ? 1 : 0 );
-            while( ret >= 0 && ret <= maxdts )
+            while( ret > 0 && ret <= maxdts )
                 ret = audio.demux_audio( cli->audio );
             Encode_audio( cli->audio, cli->hout, maxdts );
         }
