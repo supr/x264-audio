@@ -23,7 +23,7 @@ int audio_queue_rawdata( audio_hnd_t *h, uint8_t *buf, int buflen, int64_t dts )
 {
     AVPacket pkt;
     av_init_packet( &pkt );
-    pkt.dts = dts * h->time_base;
+    pkt.dts = to_time_base( dts, h->time_base );
     pkt.size = buflen;
     pkt.data = malloc( buflen );
     memcpy( pkt.data, buf, buflen );

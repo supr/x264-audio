@@ -22,7 +22,7 @@ int try_open_track( audio_hnd_t *h, int track, int copy )
         return AUDIO_ERROR;
     else
     {
-        h->time_base = o->lavf->streams[track]->time_base.den / o->lavf->streams[track]->time_base.num;
+        h->time_base = &o->lavf->streams[track]->time_base;
         h->info = malloc( sizeof( audio_info_t ) );
         h->info->codec_id   = ac->codec_id;
         h->info->codec_name = ac->codec->name;

@@ -263,7 +263,7 @@ static int write_audio( hnd_t handle, audio_hnd_t *audio, int64_t dts, uint8_t *
     }
 
     // Convert to miliseconds
-    dts = dts * 1000 / audio->time_base;
+    dts = from_time_base( dts * 1000, audio->time_base );
     int aac = a_flv->codecid == FLV_CODECID_AAC;
 
     x264_put_byte( c, FLV_TAG_TYPE_AUDIO );

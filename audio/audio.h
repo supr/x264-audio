@@ -33,7 +33,7 @@ typedef struct audio_hnd_t
     int pktcount;
     int pktsize;
     AVPacket pkt, pkt_temp;
-    int time_base;
+    AVRational *time_base;
     int framesize;
     struct audio_hnd_t *enc_hnd;
     hnd_t *encoder;
@@ -89,5 +89,15 @@ int audio_queue_rawdata( audio_hnd_t *handle, uint8_t *buffer, int buffer_length
  * @returns 1 on success, 0 if the queue is empty
  */
 int audio_dequeue_avpacket( audio_hnd_t *handle, AVPacket *pkt );
+
+static inline int64_t from_time_base( int64_t ts, AVRational *time_base )
+{
+    return ts * time_base->num / time_base->den;
+}
+
+static inline int64_t to_time_base( int64_t ts, AVRational *time_base )
+{
+    return ts * time_base->den / time_base->num;
+}
 
 #endif
