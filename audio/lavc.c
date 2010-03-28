@@ -73,7 +73,10 @@ static int open_track_lavf( audio_hnd_t *h, AVFormatContext *ctx, int track, int
             ;
     }
     else
-        j = try_open_track( h, track, copy );
+    {
+        if( ( j = try_open_track( h, track, copy ) ) < 0 )
+            fprintf( stderr, "lavc [error]: erorr opening audio track %d\n", track );
+    }
 
     h->track = j;
 
