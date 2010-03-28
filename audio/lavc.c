@@ -155,15 +155,18 @@ static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
     {
         info->codec_name = opt->encoder_name;
 
-        if( !strcmp( opt->encoder_name, "mp3" ) )
-            opt->encoder_name = "libmp3lame";
-        else if( !strcmp( opt->encoder_name, "vorbis" ) )
-            opt->encoder_name = "libvorbis";
-        else if( !strcmp( opt->encoder_name, "aac" ) )
-            opt->encoder_name = "libfaac";
+        if( !strcmp( info->codec_name, "mp3" ) )
+            info->codec_name = "libmp3lame";
+        else if( !strcmp( info->codec_name, "vorbis" ) )
+            info->codec_name = "libvorbis";
 
-        AVCodec *codec = avcodec_find_encoder_by_name( opt->encoder_name );
+        AVCodec *codec = avcodec_find_encoder_by_name( info->codec_name );
 
+        if( ! codec && !strcmp( info->codec_name, "aac" ) )
+        {
+            info->codec_name = "libfaac";
+            codec = avcodec_find_encoder_by_name( info->codec_name );
+        }
         if( !codec )
         {
             fprintf( stderr, "lavc [error]: could not find codec %s\n", opt->encoder_name );
