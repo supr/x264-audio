@@ -1318,7 +1318,7 @@ static void parse_qpfile( cli_opt_t *opt, x264_picture_t *pic, int i_frame )
  * Encode:
  *****************************************************************************/
 
-static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout )
+static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout, int maxdts )
 {
     if( !output.write_audio ) {
         fprintf( stderr, "x264 [error]: audio is not supported in this muxer!\n" );
@@ -1342,7 +1342,8 @@ static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout )
     if( dts == AV_NOPTS_VALUE )
         dts = haud->framelen;
 
-    do {
+    while( maxdts == -1 || dts <= maxdts )
+    {
         do
         {
             len = aud_samples_len;
@@ -1352,7 +1353,7 @@ static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout )
         {
             int inlen = len + pos;
             pos = enclen = 0;
-            while( inlen >= haud->framesize )
+            while( ( maxdts == -1 || dts <= maxdts ) && inlen >= haud->framesize )
             {
                 do
                 {
@@ -1375,14 +1376,14 @@ static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout )
         }
         else
             break;
-    } while( 1 );
+    }
 
     return written_bytes;
 }
 
 #define AAC 1
 
-static int  Encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_pts )
+static int  Encode_frame( x264_t *h, cli_opt_t *cli, x264_param_t *param, x264_picture_t *pic, int64_t *last_pts )
 {
     x264_picture_t pic_out;
     x264_nal_t *nal;
@@ -1399,7 +1400,11 @@ static int  Encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *l
 
     if( i_frame_size )
     {
-        i_frame_size = output.write_frame( hout, nal[0].p_payload, i_frame_size, &pic_out );
+        if( cli->audio )
+            Encode_audio( cli->audio, cli->hout,
+                          (int64_t) (
+                              ( to_time_base( pic_out.i_dts, cli->audio->time_base ) * ( (double) param->i_timebase_num / param->i_timebase_den ) + 0.5 ) ) );
+        i_frame_size = output.write_frame( cli->hout, nal[0].p_payload, i_frame_size, &pic_out );
         *last_pts = pic_out.i_pts;
     }
 
@@ -1612,15 +1617,12 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
             pic.i_qpplus1 = 0;
         }
 
-        i_frame_size = Encode_frame( h, opt->hout, &pic, &last_pts );
+        i_frame_size = Encode_frame( h, opt, param, &pic, &last_pts );
         if( i_frame_size < 0 )
             return -1;
         i_file += i_frame_size;
         if( i_frame_size )
             i_frame_output++;
-
-        if( opt->audio )
-            Encode_audio( opt->audio, opt->hout );
 
         i_frame++;
 
@@ -1634,7 +1636,7 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
     /* Flush delayed frames */
     while( !b_ctrl_c && x264_encoder_delayed_frames( h ) )
     {
-        i_frame_size = Encode_frame( h, opt->hout, NULL, &last_pts );
+        i_frame_size = Encode_frame( h, opt, param, NULL, &last_pts );
         if( i_frame_size < 0 )
             return -1;
         i_file += i_frame_size;
@@ -1642,9 +1644,9 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
             i_frame_output++;
         if( opt->b_progress && i_frame_output % i_update_interval == 0 && i_frame_output )
             Print_status( i_start, i_frame_output, i_frame_total, i_file, param, last_pts );
-        if( opt->audio )
-            Encode_audio( opt->audio, opt->hout );
     }
+    if( opt->audio )
+        Encode_audio( opt->audio, opt->hout, -1 );
     if( pts_warning_cnt >= MAX_PTS_WARNING && param->i_log_level < X264_LOG_DEBUG )
         fprintf( stderr, "x264 [warning]: %d suppressed nonmonotonic pts warnings\n", pts_warning_cnt-MAX_PTS_WARNING );
 
