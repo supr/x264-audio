@@ -181,6 +181,9 @@ static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
         ctx->flags2     |= CODEC_FLAG2_BIT_RESERVOIR; // mp3
         ctx->flags      |= CODEC_FLAG_GLOBAL_HEADER; // aac
 
+        if( !strcmp( info->codec_name, "aac" ) || !strcmp( info->codec_name, "libfaac" ) )
+            ctx->profile = FF_PROFILE_AAC_LOW;
+
         if( opt->quality_mode )
         {
             ctx->flags         |= CODEC_FLAG_QSCALE;
