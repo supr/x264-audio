@@ -1325,7 +1325,7 @@ static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout )
         return -1;
     }
 
-    static int aud_samples_len  = 0;
+    static int aud_samples_len   = 0;
     static uint8_t *aud_samples  = NULL;
     static uint8_t *encoded_data = NULL;
     if( aud_samples == NULL )
