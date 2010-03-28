@@ -1328,6 +1328,7 @@ static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout )
     static int aud_samples_len   = 0;
     static uint8_t *aud_samples  = NULL;
     static uint8_t *encoded_data = NULL;
+    static int pos = 0;
     if( aud_samples == NULL )
     {
         aud_samples_len = AUDIO_BUFSIZE * haud->info->channels * haud->info->samplesize;
@@ -1340,14 +1341,37 @@ static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout )
         do
         {
             len = aud_samples_len;
-            len = audio.decode_audio( haud, aud_samples, len, &dts );
+            len = audio.decode_audio( haud, aud_samples + pos, len - pos, &dts );
         } while( len == AUDIO_AGAIN );
         if( dts >= 0 && len > 0 )
         {
-            enclen = aud_samples_len;
-            enclen = audio.encode_audio( haud, encoded_data, enclen, aud_samples, len );
-            if( enclen > 0 )
-                written_bytes += output.write_audio( hout, haud, dts, encoded_data, enclen );
+            int inlen = len + pos;
+            pos = enclen = 0;
+            int encpos = 0;
+            int i = 0;
+            while( inlen >= haud->framesize )
+            {
+                do
+                {
+                    enclen = aud_samples_len - encpos;
+                    enclen = audio.encode_audio( haud, encoded_data + encpos, enclen, aud_samples + pos, inlen );
+                } while( enclen == AUDIO_AGAIN );
+                
+                if( enclen > 0 )
+                {
+                    ++i;
+                    encpos += enclen;
+                    inlen -= haud->framesize;
+                    pos += haud->framesize;
+                }
+                else
+                    break;
+            }
+            if( encpos )
+                written_bytes += output.write_audio( hout, haud, dts, encoded_data, encpos );
+            if( pos && inlen > 0 )
+                memmove( aud_samples, aud_samples + pos, inlen );
+            pos = inlen;
         }
         else
             break;
