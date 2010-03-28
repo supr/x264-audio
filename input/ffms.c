@@ -250,6 +250,8 @@ static int close_file( hnd_t handle )
 static int open_audio( hnd_t *handle, audio_hnd_t *ah, cli_audio_t *audio, int track, int copy )
 {
     ffms_hnd_t *h = ( ffms_hnd_t* ) handle;
+    if( !audio->open_audio_file )
+        return AUDIO_ERROR;
     return audio->open_audio_file( ah, h->filename, track, copy );
 }
 
