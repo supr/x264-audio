@@ -975,7 +975,6 @@ static int select_audio( const char *audio_decoder, const char *audio_encoder, c
         track = input.open_audio( opt->hin, opt->audio, &audio, track, b_copy );
     if( track >= 0 )
     {
-        fprintf( stderr, "x264 [audio]: opened track %d, codec %s\n", track, opt->audio->info->codec_name );
         if( audio_enc.open_encoder( opt->audio, audio_opt ) &&
             output.init_audio( opt->hout, opt->audio ) )
             fprintf( stderr, "x264 [audio]: opened %s encoder (%s: %d)\n", opt->audio->enc_hnd->info->codec_name,
