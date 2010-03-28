@@ -56,7 +56,7 @@ typedef struct
     int (*open_track_lavf)( audio_hnd_t *handle, AVFormatContext *ctx, int track, int copy );
     int (*open_audio_file)( audio_hnd_t *handle, const char *filename, int track, int copy );
     int (*open_encoder)( audio_hnd_t *handle, audio_opt_t *opt );
-    int (*demux_audio)( audio_hnd_t *handle );
+    int64_t (*demux_audio)( audio_hnd_t *handle );
     int (*decode_audio)( audio_hnd_t *handle, uint8_t *buffer, int buffer_length );
     int (*encode_audio)( audio_hnd_t *handle, uint8_t *outbuf, int outbuf_length, uint8_t *inbuf, int inbuf_length );
     int (*close_encoder)( audio_hnd_t *handle );

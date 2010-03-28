@@ -127,7 +127,7 @@ static int open_audio_file( audio_hnd_t *h, const char *filename, int track, int
     return j;
 }
 
-static int demux_audio( audio_hnd_t *h )
+static int64_t demux_audio( audio_hnd_t *h )
 {
     opaque_t *o = ( opaque_t* ) h->opaque;
     if( h->external )
@@ -142,7 +142,7 @@ static int demux_audio( audio_hnd_t *h )
 
         if( h->first_dts == AV_NOPTS_VALUE )
             h->first_dts = pkt.dts;
-        return pkt.dts;
+        return pkt.dts - h->first_dts;
     }
     // else, packets are queued by the video demuxer
 
