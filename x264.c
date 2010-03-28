@@ -1125,6 +1125,7 @@ static int Parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                 if( !audio_decoder_names[i] )
                 {
                     fprintf( stderr, "x264 [error]: invalid audio decoder '%s'\n", optarg );
+                    return -1;
                 }
                 audio_decoder = optarg;
                 break;
@@ -1134,6 +1135,7 @@ static int Parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                 if( !audio_encoder_names[i] )
                 {
                     fprintf( stderr, "x264 [error]: invalid audio encoder '%s'\n", optarg );
+                    return -1;
                 }
                 audio_encoder = optarg;
                 break;
