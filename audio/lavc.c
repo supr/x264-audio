@@ -62,7 +62,8 @@ int try_open_track( audio_hnd_t *h, int track, int copy )
 
 static int open_track_lavf( audio_hnd_t *h, AVFormatContext *ctx, int track, int copy )
 {
-    h->opaque = malloc( sizeof( opaque_t ) );
+    if( ! h->opaque )
+        h->opaque = malloc( sizeof( opaque_t ) );
     opaque_t *o = (opaque_t*) h->opaque;
     o->lavf = ctx;
 
@@ -81,6 +82,68 @@ static int open_track_lavf( audio_hnd_t *h, AVFormatContext *ctx, int track, int
     h->track = j;
 
     return j >= 0 ? j : AUDIO_ERROR;
+}
+
+static int open_audio_file( audio_hnd_t *h, const char *filename, int track, int copy )
+{
+    if( ! h->opaque )
+        h->opaque = malloc( sizeof( opaque_t ) );
+    opaque_t *o = (opaque_t*) h->opaque;
+
+    av_register_all();
+    if( !strcmp( filename, "-" ) )
+        filename = "pipe:";
+
+    if( av_open_input_file( &o->lavf, filename, NULL, 0, NULL ) )
+    {
+        fprintf( stderr, "lavc [error]: could not open audio file\n" );
+        return AUDIO_ERROR;
+    }
+
+    if( av_find_stream_info( o->lavf ) < 0 )
+    {
+        av_close_input_file( o->lavf );
+        o->lavf = NULL;
+        fprintf( stderr, "lavc [error]: could not find stream info\n" );
+        return AUDIO_ERROR;
+    }
+
+    int j = open_track_lavf( h, o->lavf, track, copy );
+
+    if( j < 0 )
+    {
+        av_close_input_file( o->lavf );
+        o->lavf = NULL;
+        fprintf( stderr, "lavc [error]: could not open audio from file\n" );
+        return AUDIO_ERROR;
+    }
+
+    h->external = 1;
+    h->first_dts = AV_NOPTS_VALUE;
+    
+    return j;
+}
+
+static int demux_audio( audio_hnd_t *h )
+{
+    opaque_t *o = ( opaque_t* ) h->opaque;
+    if( h->external )
+    {
+        AVPacket pkt;
+        av_init_packet( &pkt );
+        pkt.stream_index = TRACK_NONE;
+        int ret = 0;
+        while( pkt.stream_index != h->track && ret >= 0 )
+            ret = av_read_frame( o->lavf, &pkt );
+        audio_queue_avpacket( h, &pkt );
+
+        if( h->first_dts == AV_NOPTS_VALUE )
+            h->first_dts = pkt.dts;
+        return pkt.dts;
+    }
+    // else, packets are queued by the video demuxer
+
+    return -1;
 }
 
 static int decode_audio( audio_hnd_t *h, uint8_t *buf, int buflen ) {
@@ -271,7 +334,9 @@ static int close_track( audio_hnd_t *h )
 
 const cli_audio_t lavc_audio = {
     .open_track_lavf = open_track_lavf,
+    .open_audio_file = open_audio_file,
     .open_encoder    = open_encoder,
+    .demux_audio     = demux_audio,
     .decode_audio    = decode_audio,
     .encode_audio    = encode_audio,
     .close_encoder   = close_encoder,

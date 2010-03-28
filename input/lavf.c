@@ -111,7 +111,7 @@ static int read_frame_internal( x264_picture_t *p_pic, lavf_hnd_t *h, int i_fram
                 if( avcodec_decode_video2( c, frame, &finished, pkt ) < 0 )
                     fprintf( stderr, "lavf [warning]: video decoding failed on frame %d\n", h->next_frame );
             }
-            else if( h->audio && pkt->stream_index == h->audio->track )
+            else if( h->audio && !h->audio->external && pkt->stream_index == h->audio->track )
                 audio_queue_avpacket( h->audio, pkt );
         if( !finished )
         {
