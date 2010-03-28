@@ -207,13 +207,18 @@ static int encode_audio( audio_hnd_t *h, uint8_t *outbuf, int outbuflen, uint8_t
     if( h->copy || h->raw )
     {
         if( outbuflen < inbuflen )
+        {
+            fprintf( stderr, "lavc [error]: output buffer too short (%d / %d)\n", outbuflen, inbuflen );
             return AUDIO_ERROR;
+        }
         memcpy( outbuf, inbuf, inbuflen );
         return inbuflen;
     }
-    int expected_inbuflen = h->framesize * h->enc_hnd->info->samplesize;
-    if( inbuflen < expected_inbuflen )
+    if( inbuflen < h->framesize )
+    {
+        fprintf( stderr, "lavc [error]: input buffer too short (%d / %d)\n", inbuflen, h->framesize );
         return AUDIO_ERROR;
+    }
 
     int bytes = avcodec_encode_audio( enc->ctx, outbuf, outbuflen, ( int16_t* ) inbuf );
     return bytes < 0 ? AUDIO_ERROR : bytes == 0 ? AUDIO_AGAIN : bytes;
