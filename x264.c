@@ -1400,7 +1400,7 @@ static int  Encode_frame( x264_t *h, cli_opt_t *cli, x264_param_t *param, x264_p
 
     if( i_frame_size )
     {
-        if( cli->audio )
+        if( cli->audio && cli->audio->enc_hnd )
             Encode_audio( cli->audio, cli->hout,
                           (int64_t) (
                               ( to_time_base( pic_out.i_dts, cli->audio->time_base ) * ( (double) param->i_timebase_num / param->i_timebase_den ) + 0.5 ) ) );
