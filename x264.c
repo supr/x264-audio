@@ -68,6 +68,7 @@ typedef struct {
 /* i/o file operation function pointer structs */
 cli_input_t input;
 cli_audio_t audio;
+cli_audio_t audio_enc;
 static cli_output_t output;
 
 static const char * const demuxer_names[] =
@@ -95,6 +96,24 @@ static const char * const muxer_names[] =
     "flv",
 #ifdef MP4_OUTPUT
     "mp4",
+#endif
+    0
+};
+
+static const char * const audio_decoder_names[] =
+{
+#ifdef LAVF_INPUT
+    "auto",
+    "lavc",
+#endif
+    0
+};
+
+static const char * const audio_encoder_names[] =
+{
+#ifdef LAVF_INPUT
+    "auto",
+    "lavc",
 #endif
     0
 };
@@ -582,6 +601,15 @@ static void Help( x264_param_t *defaults, int longhelp )
         "                              or specify timebase denominator for other input\n" );
     H0( "      --pulldown <string>     Use soft pulldown to change frame rate\n"
         "                                  - none, 22, 32, 64, double, triple, euro (requires cfr input)\n" );
+    H0( "      --atrack <string>       Uses the specified audio track from the input file [any]\n"
+        "                                  - 'any' for the first available audio track\n"
+        "                                  - the track number as given by ffprobe otherwise\n" );
+    H0( "      --acodec <string>       Uses the specified codec from libavcodec to encode audio\n"
+        "                                  - 'mp3' for encoding with libmp3lame\n"
+        "                                  - 'aac' for encoding with libfaac or the ffmpeg encoder if available\n"
+        "                                  - 'copy' for copying the input audio\n" );
+    H0( "      --abitrate <integer>    Selects the audio bitrate\n" );
+    H0( "      --aquality <integer>    Use VBR quality mode (overrides bitrate)\n" );
     H0( "\n" );
 }
 
@@ -607,6 +635,12 @@ static void Help( x264_param_t *defaults, int longhelp )
 #define OPT_TCFILE_OUT 275
 #define OPT_TIMEBASE 276
 #define OPT_PULLDOWN 277
+#define OPT_AUDIODEC 278
+#define OPT_AUDIOENC 279
+#define OPT_AUDIOTRACK 280
+#define OPT_AUDIOCODEC 281
+#define OPT_AUDIOBITRATE 282
+#define OPT_AUDIOQUALITY 283
 
 static char short_options[] = "8A:B:b:f:hI:i:m:o:p:q:r:t:Vvw";
 static struct option long_options[] =
@@ -750,6 +784,12 @@ static struct option long_options[] =
     { "pic-struct",        no_argument, NULL, 0 },
     { "nal-hrd",     required_argument, NULL, 0 },
     { "pulldown",    required_argument, NULL, OPT_PULLDOWN },
+    { "adecoder",    required_argument, NULL, OPT_AUDIODEC },
+    { "aencoder",    required_argument, NULL, OPT_AUDIOENC },
+    { "atrack",      required_argument, NULL, OPT_AUDIOTRACK },
+    { "acodec",      required_argument, NULL, OPT_AUDIOCODEC },
+    { "abitrate",    required_argument, NULL, OPT_AUDIOBITRATE },
+    { "aquality",    required_argument, NULL, OPT_AUDIOQUALITY },
     {0, 0, 0, 0}
 };
 
@@ -880,6 +920,72 @@ static int select_input( const char *demuxer, char *used_demuxer, char *filename
     return 0;
 }
 
+static int select_audio( const char *audio_decoder, const char *audio_encoder, cli_opt_t *opt, int track, audio_opt_t *audio_opt )
+{
+    int b_auto = !strcasecmp( audio_decoder, "auto" );
+    const char *module = b_auto ? "lavc" : audio_decoder;
+    int b_enc_auto = !strcasecmp( audio_encoder, "auto" );
+    const char *enc_module = b_enc_auto ? "lavc" : audio_encoder;
+
+    if( track == TRACK_NONE )
+        return -1;
+
+    if( !input.open_audio )
+    {
+        fprintf( stderr, "x264 [audio]: used demuxer does not support audio\n" );
+        return -2;
+    }
+    else if( !output.init_audio )
+    {
+        fprintf( stderr, "x264 [audio]: used muxer does not support audio\n" );
+        return -3;
+    }
+    else if( !audio_opt->encoder_name )
+    {
+        fprintf( stderr, "x264 [audio]: audio codec not selected, ignoring audio\n" );
+        return -1;
+    }
+    else if( !( audio_opt->quality_mode || audio_opt->bitrate ) )
+    {
+        fprintf( stderr, "x264 [audio]: encoding parameters not set, ignoring audio\n" );
+        return -1;
+    }
+
+    if( !strcasecmp( module, "lavc" ) )
+        audio = lavc_audio;
+
+    if( !strcasecmp( enc_module, "lavc" ) )
+        audio_enc = lavc_audio;
+    
+    int b_copy = !strcasecmp( audio_opt->encoder_name, "copy" );
+
+    opt->audio = ( audio_hnd_t* ) calloc( 1, sizeof( audio_hnd_t ) );
+    if( ( track = input.open_audio( opt->hin, opt->audio, &audio, track, b_copy ) ) >= 0 )
+    {
+        fprintf( stderr, "x264 [audio]: opened track %d, codec %s\n", track, opt->audio->info->codec_name );
+        if( audio_enc.open_encoder( opt->audio, audio_opt ) &&
+            output.init_audio( opt->hout, opt->audio ) )
+            fprintf( stderr, "x264 [audio]: opened %s encoder (%s: %d)\n", opt->audio->enc_hnd->info->codec_name,
+                     audio_opt->quality_mode ? "quality" : "bitrate", audio_opt->quality_mode ? audio_opt->quality : audio_opt->bitrate );
+        else
+        {
+            fprintf( stderr, "x264 [audio]: error opening audio encoder\n" );
+            audio.close_track( opt->audio );
+            free( opt->audio );
+            opt->audio = NULL;
+        }
+    }
+
+    if( !opt->audio )
+    {
+        fprintf( stderr, "x264 [error]: could not open audio via any method!\n" );
+        return -4;
+    }
+
+    return 0;
+}
+
+
 /*****************************************************************************
  * Parse:
  *****************************************************************************/
@@ -889,6 +995,8 @@ static int Parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
     const char *demuxer = demuxer_names[0];
     char *output_filename = NULL;
     const char *muxer = muxer_names[0];
+    const char *audio_decoder = audio_decoder_names[0];
+    const char *audio_encoder = audio_encoder_names[0];
     char *tcfile_name = NULL;
     x264_param_t defaults;
     char *profile = NULL;
@@ -899,6 +1007,8 @@ static int Parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
     int b_user_interlaced = 0;
     int i;
     cli_input_opt_t input_opt;
+    audio_opt_t audio_opt;
+    int audio_track = TRACK_ANY;
     char *preset = NULL;
     char *tune = NULL;
 
@@ -906,6 +1016,7 @@ static int Parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
 
     memset( opt, 0, sizeof(cli_opt_t) );
     memset( &input_opt, 0, sizeof(cli_input_opt_t) );
+    memset( &audio_opt, 0, sizeof(audio_opt_t) );
     opt->b_progress = 1;
 
     /* Presets are applied before all other options. */
@@ -993,6 +1104,42 @@ static int Parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                     return -1;
                 }
                 demuxer = optarg;
+                break;
+            case OPT_AUDIODEC:
+                for( i = 0; audio_decoder_names[i] && strcasecmp( audio_decoder_names[i], optarg ); )
+                    i++;
+                if( !audio_decoder_names[i] )
+                {
+                    fprintf( stderr, "x264 [error]: invalid audio decoder '%s'\n", optarg );
+                }
+                audio_decoder = optarg;
+                break;
+            case OPT_AUDIOENC:
+                for( i = 0; audio_encoder_names[i] && strcasecmp( audio_encoder_names[i], optarg ); )
+                    i++;
+                if( !audio_encoder_names[i] )
+                {
+                    fprintf( stderr, "x264 [error]: invalid audio encoder '%s'\n", optarg );
+                }
+                audio_encoder = optarg;
+                break;
+            case OPT_AUDIOCODEC:
+                audio_opt.encoder_name = optarg;
+                break;
+            case OPT_AUDIOTRACK:
+                if( !strcasecmp( "any", optarg ) || !strcasecmp( "auto", optarg ) )
+                    audio_track = TRACK_ANY;
+                else if( !strcasecmp( "none", optarg ) )
+                    audio_track = TRACK_NONE;
+                else
+                    audio_track = atoi( optarg );
+                break;
+            case OPT_AUDIOBITRATE:
+                audio_opt.bitrate = atoi( optarg );
+                break;
+            case OPT_AUDIOQUALITY:
+                audio_opt.quality = atoi( optarg );
+                audio_opt.quality_mode = 1;
                 break;
             case OPT_INDEX:
                 input_opt.index = optarg;
@@ -1159,6 +1306,8 @@ generic_option:
         fprintf( stderr, "%s [info]: %dx%d%c %d:%d @ %d/%d fps (%cfr)\n", demuxername, info.width,
                  info.height, info.interlaced ? 'i' : 'p', info.sar_width, info.sar_height,
                  info.fps_num, info.fps_den, info.vfr ? 'v' : 'c' );
+
+    select_audio( audio_decoder, audio_encoder, opt, audio_track, &audio_opt );
 
     if( tcfile_name )
     {
@@ -1463,42 +1612,6 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
         i_frame_total = param->i_frame_total;
     param->i_frame_total = i_frame_total;
     i_update_interval = i_frame_total ? x264_clip3( i_frame_total / 1000, 1, 10 ) : 10;
-
-    if( input.open_audio )
-    {
-        audio = lavc_audio;
-        opt->audio = ( audio_hnd_t* ) calloc( 1, sizeof( audio_hnd_t ) );
-        int track;
-        if( ( track = input.open_audio( opt->hin, opt->audio, &audio, TRACK_ANY, 0 ) ) >= 0 )
-        {
-            fprintf( stderr, "x264 [audio]: opened track %d, codec %s\n", track, opt->audio->info->codec_name );
-            audio_opt_t aopt = {
-#if AAC
-                .encoder_name = "aac",
-                .quality = 100,
-#else
-                .encoder_name = "mp3",
-                .quality = 6,
-#endif
-                .quality_mode = 1
-            };
-            if( audio.open_encoder( opt->audio, &aopt ) &&
-                output.init_audio( opt->hout, opt->audio ) )
-            {
-                fprintf( stderr, "x264 [audio]: opened %s encoder\n", aopt.encoder_name );
-            }
-            else
-            {
-                audio.close_track( opt->audio );
-                free( opt->audio );
-                opt->audio = NULL;
-            }
-        }
-        else
-        {
-            fprintf( stderr, "x264 [audio]: error opening audio track\n" );
-        }
-    }
 
     /* set up pulldown */
     if( opt->i_pulldown && !param->b_vfr_input )
