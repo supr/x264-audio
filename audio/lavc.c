@@ -80,7 +80,7 @@ static int open_track_lavf( audio_hnd_t *h, AVFormatContext *ctx, int track, int
     return j >= 0 ? j : AUDIO_ERROR;
 }
 
-static int decode_audio( audio_hnd_t *h, uint8_t *buf, int buflen, int *dts ) {
+static int decode_audio( audio_hnd_t *h, uint8_t *buf, int buflen ) {
     if( h->track < 0 )
         return AUDIO_ERROR;
 
@@ -119,7 +119,6 @@ static int decode_audio( audio_hnd_t *h, uint8_t *buf, int buflen, int *dts ) {
             if( datalen < 0 )
                 continue;
 
-            *dts = pkt->dts;
             return datalen;
         }
     }
@@ -193,6 +192,7 @@ static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
         info->extradata      = ctx->extradata;
         info->extradata_size = ctx->extradata_size;
 
+        h->framelen  = to_time_base( ctx->frame_size, h->time_base ) / info->samplerate;
         h->framesize = ctx->frame_size * ctx->channels * info->samplesize;
         h->encoder   = calloc( 1, sizeof( encoder_t ) );
         ((encoder_t*) h->encoder)->ctx = ctx;

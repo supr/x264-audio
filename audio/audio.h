@@ -35,6 +35,7 @@ typedef struct audio_hnd_t
     AVPacket pkt, pkt_temp;
     AVRational *time_base;
     int framesize;
+    int framelen;
     struct audio_hnd_t *enc_hnd;
     hnd_t *encoder;
     hnd_t *opaque;
@@ -52,7 +53,7 @@ typedef struct
 {
     int (*open_track_lavf)( audio_hnd_t *handle, AVFormatContext *ctx, int track, int copy );
     int (*open_encoder)( audio_hnd_t *handle, audio_opt_t *opt );
-    int (*decode_audio)( audio_hnd_t *handle, uint8_t *buffer, int buffer_length, int *dts );
+    int (*decode_audio)( audio_hnd_t *handle, uint8_t *buffer, int buffer_length );
     int (*encode_audio)( audio_hnd_t *handle, uint8_t *outbuf, int outbuf_length, uint8_t *inbuf, int inbuf_length );
     int (*close_encoder)( audio_hnd_t *handle );
     int (*close_track)( audio_hnd_t *handle );

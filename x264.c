@@ -1336,39 +1336,39 @@ static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout )
         encoded_data    = malloc( aud_samples_len );
     }
 
-    int len, dts, written_bytes = 0, enclen;
+    static int64_t dts = AV_NOPTS_VALUE;
+    int len, written_bytes = 0, enclen;
+    
+    if( dts == AV_NOPTS_VALUE )
+        dts = haud->framelen;
+
     do {
         do
         {
             len = aud_samples_len;
-            len = audio.decode_audio( haud, aud_samples + pos, len - pos, &dts );
+            len = audio.decode_audio( haud, aud_samples + pos, len - pos );
         } while( len == AUDIO_AGAIN );
-        if( dts >= 0 && len > 0 )
+        if( dts > 0 && len > 0 )
         {
             int inlen = len + pos;
             pos = enclen = 0;
-            int encpos = 0;
-            int i = 0;
             while( inlen >= haud->framesize )
             {
                 do
                 {
-                    enclen = aud_samples_len - encpos;
-                    enclen = audio.encode_audio( haud, encoded_data + encpos, enclen, aud_samples + pos, inlen );
+                    enclen = audio.encode_audio( haud, encoded_data, aud_samples_len, aud_samples + pos, inlen );
                 } while( enclen == AUDIO_AGAIN );
                 
                 if( enclen > 0 )
                 {
-                    ++i;
-                    encpos += enclen;
                     inlen -= haud->framesize;
                     pos += haud->framesize;
+                    written_bytes += output.write_audio( hout, haud, dts, encoded_data, enclen );
+                    dts += haud->framelen;
                 }
                 else
                     break;
             }
-            if( encpos )
-                written_bytes += output.write_audio( hout, haud, dts, encoded_data, encpos );
             if( pos && inlen > 0 )
                 memmove( aud_samples, aud_samples + pos, inlen );
             pos = inlen;
@@ -1379,6 +1379,8 @@ static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout )
 
     return written_bytes;
 }
+
+#define AAC 1
 
 static int  Encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_pts )
 {
@@ -1466,8 +1468,14 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
         {
             fprintf( stderr, "x264 [audio]: opened track %d, codec %s\n", track, opt->audio->info->codec_name );
             audio_opt_t aopt = {
+#if AAC
+                .encoder_name = "aac",
+                .quality = 100,
+#else
                 .encoder_name = "mp3",
-                .bitrate = 128
+                .quality = 6,
+#endif
+                .quality_mode = 1
             };
             if( audio.open_encoder( opt->audio, &aopt ) &&
                 output.init_audio( opt->hout, opt->audio ) )
