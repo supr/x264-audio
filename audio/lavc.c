@@ -169,6 +169,9 @@ static int decode_audio( audio_hnd_t *h, uint8_t *buf, int buflen ) {
 
     int len = 0, datalen = 0;
 
+    if( pkt_temp->size )
+        assert( pkt->dts >= h->seek_dts );
+
     if( h->copy && pkt_temp->size > 0 )
     {
         if( buflen < pkt->size )
