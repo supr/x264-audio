@@ -1493,7 +1493,7 @@ static void parse_qpfile( cli_opt_t *opt, x264_picture_t *pic, int i_frame )
  * Encode:
  *****************************************************************************/
 
-static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout, int maxdts )
+static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout, int64_t maxdts )
 {
     if( !output.write_audio ) {
         fprintf( stderr, "x264 [error]: audio is not supported in this muxer!\n" );
