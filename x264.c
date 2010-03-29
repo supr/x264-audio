@@ -1516,7 +1516,12 @@ static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout, int64_t maxdts )
     int len, written_bytes = 0, enclen;
     
     if( dts == AV_NOPTS_VALUE )
-        dts = haud->framelen;
+    {
+        if( haud->first_dts )
+            dts = haud->first_dts;
+        else
+            dts = haud->framelen;
+    }
 
     while( maxdts == -1 || dts <= maxdts )
     {
@@ -1581,9 +1586,9 @@ static int  Encode_frame( x264_t *h, cli_opt_t *cli, x264_param_t *param, x264_p
         {
             int64_t maxdts = ( int64_t ) ( to_time_base( pic_out.i_dts, cli->audio->time_base ) * ( ( double ) param->i_timebase_num / param->i_timebase_den ) + 0.5 );
             int64_t ret = cli->audio->last_pkt ? cli->audio->last_pkt->pkt.dts : ( cli->audio->external ? 1 : 0 );
-            while( ret > 0 && ret <= maxdts )
+            while( ret > 0 && ret <= maxdts + ( cli->audio->first_dts ? 0 : cli->audio->seek_dts ) )
                 ret = audio.demux_audio( cli->audio );
-            Encode_audio( cli->audio, cli->hout, maxdts );
+            Encode_audio( cli->audio, cli->hout, maxdts + cli->audio->first_dts );
         }
         i_frame_size = output.write_frame( cli->hout, nal[0].p_payload, i_frame_size, &pic_out );
         *last_pts = pic_out.i_pts;
@@ -1713,6 +1718,15 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
     if( opt->tcfile_out )
         fprintf( opt->tcfile_out, "# timecode format v2\n" );
 
+    if( opt->audio && opt->audio->seek_dts == AV_NOPTS_VALUE )
+    {
+        if( opt->i_seek )
+            opt->audio->seek_dts = opt->audio->first_dts = 
+                ( int64_t ) ( to_time_base( opt->i_seek, opt->audio->time_base ) * ( ( double ) param->i_timebase_num / param->i_timebase_den ) + 0.5 );
+        else
+            opt->audio->seek_dts = opt->audio->first_dts = 0;
+    }
+    
     /* Encode frames */
     for( i_frame = 0, i_frame_output = 0; b_ctrl_c == 0 && (i_frame < i_frame_total || i_frame_total == 0); )
     {
@@ -1761,6 +1775,9 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
             pic.i_type = X264_TYPE_AUTO;
             pic.i_qpplus1 = 0;
         }
+
+        if( opt->audio && opt->audio->first_dts > 0 && pic.i_pts == 0 )
+            opt->audio->first_dts = 0;
 
         i_frame_size = Encode_frame( h, opt, param, &pic, &last_pts );
         if( i_frame_size < 0 )

@@ -36,6 +36,7 @@ typedef struct audio_hnd_t
     AVRational *time_base;
     int framesize;
     int framelen;
+    int64_t seek_dts;
     int64_t first_dts;
     struct audio_hnd_t *enc_hnd;
     hnd_t *encoder;
@@ -70,6 +71,7 @@ enum
 
 enum
 {
+    AUDIO_NONE  = -4,
     AUDIO_ERROR = -3,
     AUDIO_QUEUE_EMPTY = -2,
     AUDIO_AGAIN = -1

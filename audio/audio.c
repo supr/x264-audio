@@ -2,9 +2,11 @@
 
 int audio_queue_avpacket( audio_hnd_t *h, AVPacket *pkt )
 {
+    if( h->seek_dts && pkt->dts < h->seek_dts )
+        return AUDIO_AGAIN;
     AVPacketList *pkt1 = av_malloc(sizeof(AVPacketList));
     if( !pkt1 || av_dup_packet(pkt) < 0 )
-        return -1;
+        return 0;
     pkt1->pkt = *pkt;
     pkt1->next = NULL;
 
@@ -16,7 +18,7 @@ int audio_queue_avpacket( audio_hnd_t *h, AVPacket *pkt )
     h->pktcount++;
     h->pktsize += pkt1->pkt.size;
 
-    return 0;
+    return 1;
 }
 
 int audio_queue_rawdata( audio_hnd_t *h, uint8_t *buf, int buflen, int64_t dts )
@@ -25,10 +27,13 @@ int audio_queue_rawdata( audio_hnd_t *h, uint8_t *buf, int buflen, int64_t dts )
     av_init_packet( &pkt );
     pkt.dts = to_time_base( dts, h->time_base );
     pkt.size = buflen;
-    pkt.data = malloc( buflen );
+    pkt.data = av_malloc( buflen );
     memcpy( pkt.data, buf, buflen );
 
-    return audio_queue_avpacket( h, &pkt );
+    int ret = audio_queue_avpacket( h, &pkt );
+    if( ret == 0 || ret == AUDIO_AGAIN )
+        av_free_packet( &pkt );
+    return ret;
 }
 
 int audio_dequeue_avpacket( audio_hnd_t *h, AVPacket *pkt )

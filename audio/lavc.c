@@ -58,6 +58,8 @@ int try_open_track( audio_hnd_t *h, int track, int copy )
             avcodec_close( ac );
             h->copy = 1;
         }
+
+        h->seek_dts = AV_NOPTS_VALUE;
     }
     return track;
 }
@@ -140,15 +142,20 @@ static int64_t demux_audio( audio_hnd_t *h )
         int ret = 0;
         while( pkt.stream_index != h->track && ret >= 0 )
             ret = av_read_frame( o->lavf, &pkt );
-        audio_queue_avpacket( h, &pkt );
+        if( ret < 0 )
+        {
+            fprintf( stderr, "lavc [error]: error demuxing audio packet\n" );
+            return ret;
+        }
 
-        if( h->first_dts == AV_NOPTS_VALUE )
+        if( audio_queue_avpacket( h, &pkt ) && h->first_dts == AV_NOPTS_VALUE )
             h->first_dts = pkt.dts;
-        return pkt.dts - h->first_dts;
+
+        return pkt.dts;
     }
     // else, packets are queued by the video demuxer
 
-    return -1;
+    return AUDIO_NONE;
 }
 
 static int decode_audio( audio_hnd_t *h, uint8_t *buf, int buflen ) {
