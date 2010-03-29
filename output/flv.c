@@ -307,8 +307,10 @@ static int init_audio( hnd_t *handle, audio_hnd_t *audio )
         a_flv->extradata_size = info->extradata_size;
         a_flv->extradata      = info->extradata;
     }
-    else if( !strcmp( codec_name, "pcm" ) || !strcmp( codec_name, "raw" ) )
-        a_flv->codecid = FLV_CODECID_PCM;
+    else if( !strcmp( codec_name, "raw" ) )
+        a_flv->codecid = FLV_CODECID_RAW;
+    else if( !strcmp( codec_name, "adpcm_swf" ) )
+        a_flv->codecid = FLV_CODECID_ADPCM;
     else
     {
         fprintf( stderr, "flv [error]: unsupported audio codec %s\n", codec_name );
