@@ -28,7 +28,6 @@ typedef struct audio_hnd_t
     audio_info_t *info;
     int external;
     int copy;
-    int raw;
     int track;
     AVPacketList *first_pkt, *last_pkt;
     int pktcount;

@@ -219,14 +219,14 @@ static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
     
     if( h->copy || !strcmp( opt->encoder_name, "copy" ) )
     {
-        h->copy = 1;
+        h->enc_hnd->copy = h->copy = 1;
     }
     else if( !strcmp( opt->encoder_name, "raw" ) )
     {
-        h->raw = 1;
         info->codec_name     = "pcm";
         info->extradata      = NULL;
         info->extradata_size = 0;
+        h->enc_hnd->copy = 1;
     }
     else
     {
@@ -290,7 +290,7 @@ static int encode_audio( audio_hnd_t *h, uint8_t *outbuf, int outbuflen, uint8_t
 {
     encoder_t *enc = (encoder_t*) h->encoder;
 
-    if( h->copy || h->raw )
+    if( h->enc_hnd->copy )
     {
         if( outbuflen < inbuflen )
         {

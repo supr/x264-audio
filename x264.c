@@ -1540,15 +1540,15 @@ static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout, int64_t maxdts )
                 {
                     written_bytes += output.write_audio( hout, haud, dts, encoded_data, enclen );
                     dts += haud->framelen;
-                    pos += haud->copy ? 0 : haud->framesize;
-                    inlen -= haud->copy ? enclen : haud->framesize;
+                    pos += haud->enc_hnd->copy ? 0 : haud->framesize;
+                    inlen -= haud->enc_hnd->copy ? enclen : haud->framesize;
                 }
                 else
                     break;
             }
             if( pos && inlen > 0 )
                 memmove( aud_samples, aud_samples + pos, inlen );
-            if( !haud->copy )
+            if( !haud->enc_hnd->copy )
                 pos = inlen;
         }
         else
