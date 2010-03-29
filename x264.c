@@ -1721,8 +1721,11 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
     if( opt->audio && opt->audio->seek_dts == AV_NOPTS_VALUE )
     {
         if( opt->i_seek )
+        {
             opt->audio->seek_dts = opt->audio->first_dts = 
                 ( int64_t ) ( to_time_base( opt->i_seek, opt->audio->time_base ) * ( ( double ) param->i_timebase_num / param->i_timebase_den ) + 0.5 );
+            fprintf( stderr, "x264 [audio]: seeking to %.2f seconds\n", ( (float) from_time_base( opt->audio->seek_dts * 1000, opt->audio->time_base ) ) / 1000 );
+        }
         else
             opt->audio->seek_dts = opt->audio->first_dts = 0;
     }
