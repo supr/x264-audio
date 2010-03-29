@@ -929,6 +929,7 @@ static int select_audio( const char *audio_decoder, const char *audio_encoder, c
     const char *module = b_auto ? "lavc" : audio_decoder;
     int b_enc_auto = !strcasecmp( audio_encoder, "auto" );
     const char *enc_module = b_enc_auto ? "lavc" : audio_encoder;
+    int b_copy = !strcasecmp( audio_opt->encoder_name, "copy" );
 
     if( track == TRACK_NONE )
         return -1;
@@ -948,7 +949,7 @@ static int select_audio( const char *audio_decoder, const char *audio_encoder, c
         fprintf( stderr, "x264 [audio]: audio codec not selected, ignoring audio\n" );
         return -1;
     }
-    else if( !( audio_opt->quality_mode || audio_opt->bitrate ) )
+    else if( !b_copy && !( audio_opt->quality_mode || audio_opt->bitrate ) )
     {
         fprintf( stderr, "x264 [audio]: encoding parameters not set, ignoring audio\n" );
         return -1;
@@ -965,8 +966,6 @@ static int select_audio( const char *audio_decoder, const char *audio_encoder, c
         fprintf( stderr, "x264 [audio]: audio decoder does not support external audio files, using input file\n" );
         audiofile = NULL;
     }
-
-    int b_copy = !strcasecmp( audio_opt->encoder_name, "copy" );
 
     opt->audio = ( audio_hnd_t* ) calloc( 1, sizeof( audio_hnd_t ) );
     if( audiofile )
