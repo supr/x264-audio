@@ -214,7 +214,12 @@ static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
     memcpy( info, h->info, sizeof( audio_info_t ) );
 
     if( h->copy || !strcmp( opt->encoder_name, "copy" ) )
+    {
+        opaque_t *o = ( opaque_t* ) h->opaque;
+        AVCodecContext *ac = o->lavf->streams[h->track]->codec;
+        h->framelen  = to_time_base( ac->frame_size, h->time_base ) / info->samplerate;
         h->copy = 1;
+    }
     else if( !strcmp( opt->encoder_name, "raw" ) )
     {
         info->codec_name = "pcm";
