@@ -289,7 +289,7 @@ static int init_audio( hnd_t *handle, audio_hnd_t *audio )
 {
     if( !audio->enc_hnd )
     {
-        fprintf( stderr, "flv [error]: cannot initialize audio for uninitailized encoder\n" );
+        fprintf( stderr, "flv [error]: cannot initialize audio for uninitialized encoder\n" );
         return 0;
     }
     const char *codec_name = audio->enc_hnd->info->codec_name;
