@@ -223,8 +223,10 @@ static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
     }
     else if( !strcmp( opt->encoder_name, "raw" ) )
     {
-        info->codec_name = "pcm";
         h->raw = 1;
+        info->codec_name     = "pcm";
+        info->extradata      = NULL;
+        info->extradata_size = 0;
     }
     else
     {
