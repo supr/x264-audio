@@ -957,10 +957,10 @@ static int select_audio( const char *audio_decoder, const char *audio_encoder, c
     }
 
     if( !strcasecmp( module, "lavc" ) )
-        audio = lavc_audio;
+        audio = lavcdec_audio;
 
     if( !strcasecmp( enc_module, "lavc" ) )
-        audio_enc = lavc_audio;
+        audio_enc = lavcenc_audio;
 
     if( audiofile && !audio.open_audio_file )
     {
@@ -969,6 +969,7 @@ static int select_audio( const char *audio_decoder, const char *audio_encoder, c
     }
 
     opt->audio = ( audio_hnd_t* ) calloc( 1, sizeof( audio_hnd_t ) );
+    opt->audio->self = audio;
     if( audiofile )
         track = audio.open_audio_file( opt->audio, audiofile, track, b_copy );
     else
@@ -977,12 +978,20 @@ static int select_audio( const char *audio_decoder, const char *audio_encoder, c
     {
         if( audio_enc.open_encoder( opt->audio, audio_opt ) &&
             output.init_audio( opt->hout, opt->audio ) )
-            fprintf( stderr, "x264 [audio]: opened %s encoder (%s: %d)\n", opt->audio->enc_hnd->info->codec_name,
-                     audio_opt->quality_mode ? "quality" : "bitrate", audio_opt->quality_mode ? audio_opt->quality : audio_opt->bitrate );
+        {
+            opt->audio->enc->self = &audio_enc;
+            if( b_copy )
+                fprintf( stderr, "x264 [audio]: opened copy encoder\n" );
+            else
+                fprintf( stderr, "x264 [audio]: opened %s encoder (%s: %d)\n",
+                         opt->audio->enc->info->codec_name,
+                         audio_opt->quality_mode ? "quality" : "bitrate",
+                         audio_opt->quality_mode ? audio_opt->quality : audio_opt->bitrate );
+        }
         else
         {
             fprintf( stderr, "x264 [audio]: error opening audio encoder\n" );
-            audio.close_track( opt->audio );
+            close_audio( opt->audio );
             free( opt->audio );
             opt->audio = NULL;
         }
@@ -1538,22 +1547,22 @@ static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout, int64_t maxdts )
             {
                 do
                 {
-                    enclen = audio.encode_audio( haud, encoded_data, aud_samples_len, aud_samples + pos, inlen );
+                    enclen = audio_enc.encode_audio( haud, encoded_data, aud_samples_len, aud_samples + pos, inlen );
                 } while( enclen == AUDIO_AGAIN );
-                
+
                 if( enclen > 0 )
                 {
                     written_bytes += output.write_audio( hout, haud, dts, encoded_data, enclen );
                     dts += haud->framelen;
-                    pos += haud->enc_hnd->copy ? 0 : haud->framesize;
-                    inlen -= haud->enc_hnd->copy ? enclen : haud->framesize;
+                    pos += haud->enc->copy ? 0 : haud->framesize;
+                    inlen -= haud->enc->copy ? enclen : haud->framesize;
                 }
                 else
                     break;
             }
             if( pos && inlen > 0 )
                 memmove( aud_samples, aud_samples + pos, inlen );
-            if( !haud->enc_hnd->copy )
+            if( !haud->enc->copy )
                 pos = inlen;
         }
         else
@@ -1582,7 +1591,7 @@ static int  Encode_frame( x264_t *h, cli_opt_t *cli, x264_param_t *param, x264_p
 
     if( i_frame_size )
     {
-        if( cli->audio && cli->audio->enc_hnd )
+        if( cli->audio && cli->audio->enc )
         {
             int64_t maxdts = ( int64_t ) ( to_time_base( pic_out.i_dts, cli->audio->time_base ) * ( ( double ) param->i_timebase_num / param->i_timebase_den ) + 0.5 );
             int64_t ret = cli->audio->last_pkt ? cli->audio->last_pkt->pkt.dts : ( cli->audio->external ? 1 : 0 );
@@ -1840,6 +1849,7 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
         opt->tcfile_out = NULL;
     }
 
+    close_audio( opt->audio );
     input.close_file( opt->hin );
     output.close_file( opt->hout, largest_pts, second_largest_pts );
 

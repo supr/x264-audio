@@ -1,14 +1,6 @@
 #include "audio/audio.h"
-
-typedef struct
-{
-    AVCodecContext *ctx;
-} encoder_t;
-
-typedef struct
-{
-    AVFormatContext *lavf;
-} opaque_t;
+#include "audio/audio_internal.h"
+#include "audio/lavc.h"
 
 int try_open_track( audio_hnd_t *h, int track, int copy )
 {
@@ -22,7 +14,8 @@ int try_open_track( audio_hnd_t *h, int track, int copy )
         return AUDIO_ERROR;
     else
     {
-        h->time_base = &o->lavf->streams[track]->time_base;
+        h->time_base = malloc( sizeof( rational_t ) );
+        from_avrational( h->time_base, &o->lavf->streams[track]->time_base );
         h->info = malloc( sizeof( audio_info_t ) );
         h->info->codec_id       = ac->codec_id;
         h->info->codec_name     = ac->codec->name;
@@ -59,7 +52,9 @@ int try_open_track( audio_hnd_t *h, int track, int copy )
             h->copy = 1;
         }
 
-        h->seek_dts = AV_NOPTS_VALUE;
+        h->seek_dts  = AV_NOPTS_VALUE;
+        h->framelen  = to_time_base( ac->frame_size, h->time_base ) / h->info->samplerate;
+        h->framesize = ac->frame_size * h->info->channels * h->info->samplesize;
     }
     return track;
 }
@@ -71,16 +66,16 @@ static int open_track_lavf( audio_hnd_t *h, AVFormatContext *ctx, int track, int
     opaque_t *o = (opaque_t*) h->opaque;
     o->lavf = ctx;
 
-    int i, j = 0;
+    int i, j = -1;
     if( track == TRACK_ANY )
     {
-        for( i = 0; i < o->lavf->nb_streams && ( j = try_open_track( h, i, copy ) ) < 0; i++ )
-            ;
+        for( i = 0; i < o->lavf->nb_streams && j < 0; i++ )
+            j = try_open_track( h, i, copy );
     }
     else
     {
         if( ( j = try_open_track( h, track, copy ) ) < 0 )
-            fprintf( stderr, "lavc [error]: erorr opening audio track %d\n", track );
+            fprintf( stderr, "lavc [error]: error opening audio track %d\n", track );
     }
 
     if( j >= 0 )
@@ -217,130 +212,8 @@ static int decode_audio( audio_hnd_t *h, uint8_t *buf, int buflen ) {
     return AUDIO_AGAIN;
 }
 
-static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
+static int close_filter( audio_hnd_t *h )
 {
-    h->enc_hnd = calloc( 1, sizeof( audio_hnd_t ) );
-    audio_info_t *info = h->enc_hnd->info = malloc( sizeof( audio_info_t ) );
-    memcpy( info, h->info, sizeof( audio_info_t ) );
-
-    opaque_t *o = ( opaque_t* ) h->opaque;
-    AVCodecContext *decctx = o->lavf->streams[h->track]->codec;
-    h->framelen  = to_time_base( decctx->frame_size, h->time_base ) / info->samplerate;
-    
-    if( h->copy || !strcmp( opt->encoder_name, "copy" ) )
-    {
-        h->enc_hnd->copy = h->copy = 1;
-    }
-    else if( !strcmp( opt->encoder_name, "raw" ) )
-    {
-        info->codec_name     = "pcm";
-        info->extradata      = NULL;
-        info->extradata_size = 0;
-        h->enc_hnd->copy = 1;
-    }
-    else
-    {
-        info->codec_name = opt->encoder_name;
-
-        if( !strcmp( info->codec_name, "mp3" ) )
-            info->codec_name = "libmp3lame";
-        else if( !strcmp( info->codec_name, "vorbis" ) )
-            info->codec_name = "libvorbis";
-
-        AVCodec *codec = avcodec_find_encoder_by_name( info->codec_name );
-
-        if( ! codec && !strcmp( info->codec_name, "aac" ) )
-        {
-            info->codec_name = "libfaac";
-            codec = avcodec_find_encoder_by_name( info->codec_name );
-        }
-        if( !codec )
-        {
-            fprintf( stderr, "lavc [error]: could not find codec %s\n", opt->encoder_name );
-            return 0;
-        }
-        info->codec_id = codec->id;
-
-        AVCodecContext *ctx = avcodec_alloc_context();
-        ctx->sample_rate = info->samplerate;
-        ctx->sample_fmt  = info->samplefmt;
-        ctx->channels    = info->channels;
-        ctx->flags2     |= CODEC_FLAG2_BIT_RESERVOIR; // mp3
-        ctx->flags      |= CODEC_FLAG_GLOBAL_HEADER; // aac
-
-        if( !strcmp( info->codec_name, "aac" ) || !strcmp( info->codec_name, "libfaac" ) )
-            ctx->profile = FF_PROFILE_AAC_LOW;
-
-        if( opt->quality_mode )
-        {
-            ctx->flags         |= CODEC_FLAG_QSCALE;
-            ctx->global_quality = FF_QP2LAMBDA * opt->quality;
-        }
-        else
-            ctx->bit_rate = opt->bitrate * 1000;
-
-        if( avcodec_open( ctx, codec ) < 0 )
-        {
-            fprintf( stderr, "lavc [error]: could not open encoder\n" );
-            return 0;
-        }
-
-        info->extradata      = ctx->extradata;
-        info->extradata_size = ctx->extradata_size;
-
-        h->framelen  = to_time_base( ctx->frame_size, h->time_base ) / info->samplerate;
-        h->framesize = ctx->frame_size * ctx->channels * info->samplesize;
-        h->encoder   = calloc( 1, sizeof( encoder_t ) );
-        ((encoder_t*) h->encoder)->ctx = ctx;
-    }
-    return 1;
-}
-
-static int encode_audio( audio_hnd_t *h, uint8_t *outbuf, int outbuflen, uint8_t *inbuf, int inbuflen )
-{
-    encoder_t *enc = (encoder_t*) h->encoder;
-
-    if( h->enc_hnd->copy )
-    {
-        if( outbuflen < inbuflen )
-        {
-            fprintf( stderr, "lavc [error]: output buffer too short (%d / %d)\n", outbuflen, inbuflen );
-            return AUDIO_ERROR;
-        }
-        memcpy( outbuf, inbuf, inbuflen );
-        return inbuflen;
-    }
-    if( inbuflen < h->framesize )
-    {
-        fprintf( stderr, "lavc [error]: input buffer too short (%d / %d)\n", inbuflen, h->framesize );
-        return AUDIO_ERROR;
-    }
-
-    int bytes = avcodec_encode_audio( enc->ctx, outbuf, outbuflen, ( int16_t* ) inbuf );
-    return bytes < 0 ? AUDIO_ERROR : bytes == 0 ? AUDIO_AGAIN : bytes;
-}
-
-static int close_encoder( audio_hnd_t *h )
-{
-    encoder_t *enc = (encoder_t*) h->encoder;
-
-    if( !enc )
-        return 0;
-
-    avcodec_close( enc->ctx );
-    av_free( enc->ctx );
-    free( enc );
-    h->encoder = NULL;
-
-    return 0;
-}
-
-static int close_track( audio_hnd_t *h )
-{
-    close_encoder( h );
-    if( h->enc_hnd )
-        close_track( h->enc_hnd );
-
     AVPacket *pkt = NULL;
     while( audio_dequeue_avpacket( h, pkt ) )
         av_free_packet( pkt );
@@ -356,13 +229,10 @@ static int close_track( audio_hnd_t *h )
     return 0;
 }
 
-const cli_audio_t lavc_audio = {
+const cli_audio_t lavcdec_audio = {
     .open_track_lavf = open_track_lavf,
     .open_audio_file = open_audio_file,
-    .open_encoder    = open_encoder,
     .demux_audio     = demux_audio,
     .decode_audio    = decode_audio,
-    .encode_audio    = encode_audio,
-    .close_encoder   = close_encoder,
-    .close_track     = close_track
+    .close_filter    = close_filter
 };

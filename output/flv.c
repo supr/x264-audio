@@ -287,13 +287,13 @@ static int write_audio( hnd_t handle, audio_hnd_t *audio, int64_t dts, uint8_t *
 
 static int init_audio( hnd_t *handle, audio_hnd_t *audio )
 {
-    if( !audio->enc_hnd )
+    if( !audio->enc )
     {
         fprintf( stderr, "flv [error]: cannot initialize audio for uninitialized encoder\n" );
         return 0;
     }
-    const char *codec_name = audio->enc_hnd->info->codec_name;
-    audio_info_t *info = audio->enc_hnd->info;
+    const char *codec_name = audio->enc->info->codec_name;
+    audio_info_t *info = audio->enc->info;
 
     flv_hnd_t       *p_flv = ( flv_hnd_t* ) handle;
     flv_audio_hnd_t *a_flv = p_flv->audio = malloc( sizeof( flv_audio_hnd_t ) );

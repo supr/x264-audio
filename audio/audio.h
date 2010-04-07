@@ -11,7 +11,7 @@
 #define AUDIO_BUFSIZE (AVCODEC_MAX_AUDIO_FRAME_SIZE*3/2)
 
 /* properties of the source given by the demuxer */
-typedef struct
+typedef struct audio_info_t
 {
     int codec_id;
     const char *codec_name;
@@ -25,6 +25,7 @@ typedef struct
 
 typedef struct audio_hnd_t
 {
+    struct cli_audio_t *self;
     audio_info_t *info;
     int external;
     int copy;
@@ -33,17 +34,18 @@ typedef struct audio_hnd_t
     int pktcount;
     int pktsize;
     AVPacket pkt, pkt_temp;
-    AVRational *time_base;
+    rational_t *time_base;
     int framesize;
     int framelen;
     int64_t seek_dts;
     int64_t first_dts;
-    struct audio_hnd_t *enc_hnd;
-    hnd_t *encoder;
+    struct audio_hnd_t *next;
+    struct audio_hnd_t *last;
+    struct audio_hnd_t *enc;
     hnd_t *opaque;
 } audio_hnd_t;
 
-typedef struct
+typedef struct audio_opt_t
 {
     char *encoder_name;
     int bitrate;
@@ -51,7 +53,7 @@ typedef struct
     int quality_mode;
 } audio_opt_t;
 
-typedef struct
+typedef struct cli_audio_t
 {
     int (*open_track_lavf)( audio_hnd_t *handle, AVFormatContext *ctx, int track, int copy );
     int (*open_audio_file)( audio_hnd_t *handle, const char *filename, int track, int copy );
@@ -59,8 +61,7 @@ typedef struct
     int64_t (*demux_audio)( audio_hnd_t *handle );
     int (*decode_audio)( audio_hnd_t *handle, uint8_t *buffer, int buffer_length );
     int (*encode_audio)( audio_hnd_t *handle, uint8_t *outbuf, int outbuf_length, uint8_t *inbuf, int inbuf_length );
-    int (*close_encoder)( audio_hnd_t *handle );
-    int (*close_track)( audio_hnd_t *handle );
+    int (*close_filter)( audio_hnd_t *handle );
 } cli_audio_t;
 
 enum
@@ -77,8 +78,10 @@ enum
     AUDIO_AGAIN = -1
 };
 
-extern const cli_audio_t lavc_audio;
+extern const cli_audio_t lavcdec_audio;
+extern const cli_audio_t lavcenc_audio;
 
+void close_audio( audio_hnd_t *base );
 /**
  * Puts an AVPacket in the decoding queue.
  * @returns 0 on success, -1 on error
@@ -95,15 +98,5 @@ int audio_queue_rawdata( audio_hnd_t *handle, uint8_t *buffer, int buffer_length
  * @returns 1 on success, 0 if the queue is empty
  */
 int audio_dequeue_avpacket( audio_hnd_t *handle, AVPacket *pkt );
-
-static inline int64_t from_time_base( int64_t ts, AVRational *time_base )
-{
-    return ts * time_base->num / time_base->den;
-}
-
-static inline int64_t to_time_base( int64_t ts, AVRational *time_base )
-{
-    return ts * time_base->den / time_base->num;
-}
 
 #endif

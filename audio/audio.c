@@ -1,4 +1,5 @@
 #include "audio/audio.h"
+#include "audio/audio_internal.h"
 
 int audio_queue_avpacket( audio_hnd_t *h, AVPacket *pkt )
 {
@@ -52,3 +53,16 @@ int audio_dequeue_avpacket( audio_hnd_t *h, AVPacket *pkt )
     return 0;
 }
 
+void close_audio( audio_hnd_t *base )
+{
+    if( !base )
+        return;
+    audio_hnd_t *h;
+    while( h = audio_pop_filter( base ) )
+    {
+        assert( h->self && h->self->close_filter );
+        h->self->close_filter( h );
+    }
+    assert( h->self && h->self->close_filter );
+    h->self->close_filter( base );
+}
