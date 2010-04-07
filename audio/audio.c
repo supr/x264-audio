@@ -1,6 +1,60 @@
 #include "audio/audio.h"
 #include "audio/audio_internal.h"
 
+audio_hnd_t *open_audio_decoder( cli_audio_t *dec, AVFormatContext *ctx, int track, int copy )
+{
+    assert( dec );
+    assert( ctx );
+
+    audio_hnd_t *h = calloc( 1, sizeof( audio_hnd_t ) );
+    h->self = dec;
+    if( dec->open_track_lavf( h, ctx, track, copy ) == AUDIO_ERROR )
+    {
+        fprintf( stderr, "audio [error]: error opening audio decoder\n" );
+        return NULL;
+    }
+
+    return h;
+}
+
+AVFormatContext *open_lavf_demuxer( const char *filename )
+{
+    AVFormatContext *lavf;
+
+    av_register_all();
+    if( !strcmp( filename, "-" ) )
+        filename = "pipe:";
+
+    if( av_open_input_file( &lavf, filename, NULL, 0, NULL ) )
+    {
+        fprintf( stderr, "audio [error]: could not open audio file\n" );
+        goto fail;
+    }
+
+    if( av_find_stream_info( lavf ) < 0 )
+    {
+        fprintf( stderr, "audio [error]: could not find stream info\n" );
+        goto fail;
+    }
+
+    unsigned track;
+    for( track = 0;
+            track < lavf->nb_streams && lavf->streams[track]->codec->codec_type != CODEC_TYPE_AUDIO; )
+        ++track;
+
+    if( track == lavf->nb_streams )
+    {
+        fprintf( stderr, "audio [error]: could not find any audio track on the external file" );
+        goto fail;
+    }
+    return lavf;
+
+fail:
+    if( lavf )
+        av_close_input_file( lavf );
+    return NULL;
+}
+
 int audio_queue_avpacket( audio_hnd_t *h, AVPacket *pkt )
 {
     if( h->seek_dts && pkt->dts < h->seek_dts )

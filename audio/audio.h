@@ -81,7 +81,15 @@ enum
 extern const cli_audio_t lavcdec_audio;
 extern const cli_audio_t lavcenc_audio;
 
+audio_hnd_t *open_audio_decoder( cli_audio_t *dec, AVFormatContext *ctx, int track, int copy );
+AVFormatContext *open_lavf_demuxer( const char *filename );
 void close_audio( audio_hnd_t *base );
+
+inline audio_hnd_t *open_external_audio( cli_audio_t *dec, const char *filename, int track, int copy )
+{
+    return open_audio_decoder( dec, open_lavf_demuxer( filename ), track, copy );
+}
+
 /**
  * Puts an AVPacket in the decoding queue.
  * @returns 0 on success, -1 on error
