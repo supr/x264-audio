@@ -73,7 +73,7 @@ static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
         encoder_t *enc = calloc( 1, sizeof( encoder_t ) );
         enc->ctx       = ctx;
 
-        h->enc->opaque = enc;
+        h->enc->opaque = (hnd_t) enc;
     }
     return 1;
 }
