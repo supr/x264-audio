@@ -42,7 +42,7 @@ typedef struct audio_hnd_t
     struct audio_hnd_t *next;
     struct audio_hnd_t *last;
     struct audio_hnd_t *enc;
-    hnd_t opaque;
+    hnd_t *opaque;
 } audio_hnd_t;
 
 typedef struct audio_opt_t

@@ -838,7 +838,7 @@ static int select_output( const char *muxer, char *filename, x264_param_t *param
     return 0;
 }
 
-extern int thread_open_audio( hnd_t*, audio_hnd_t*, cli_audio_t*, int, int );
+extern audio_hnd_t *thread_open_audio( hnd_t, cli_audio_t*, int*, int );
 
 static int select_input( const char *demuxer, char *used_demuxer, char *filename,
                          hnd_t *p_handle, video_info_t *info, cli_input_opt_t *opt )
@@ -962,18 +962,10 @@ static int select_audio( const char *audio_decoder, const char *audio_encoder, c
     if( !strcasecmp( enc_module, "lavc" ) )
         audio_enc = lavcenc_audio;
 
-    if( audiofile && !audio.open_audio_file )
-    {
-        fprintf( stderr, "x264 [audio]: audio decoder does not support external audio files, using input file\n" );
-        audiofile = NULL;
-    }
-
-    opt->audio = ( audio_hnd_t* ) calloc( 1, sizeof( audio_hnd_t ) );
-    opt->audio->self = audio;
     if( audiofile )
-        track = audio.open_audio_file( opt->audio, audiofile, track, b_copy );
+        opt->audio = open_external_audio( &audio, audiofile, &track, b_copy );
     else
-        track = input.open_audio( opt->hin, opt->audio, &audio, track, b_copy );
+        opt->audio = input.open_audio( opt->hin, &audio, &track, b_copy );
     if( track >= 0 )
     {
         if( audio_enc.open_encoder( opt->audio, audio_opt ) &&

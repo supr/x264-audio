@@ -247,12 +247,10 @@ static int close_file( hnd_t handle )
     return 0;
 }
 
-static int open_audio( hnd_t *handle, audio_hnd_t *ah, cli_audio_t *audio, int track, int copy )
+static audio_hnd_t *open_audio( hnd_t handle, cli_audio_t *audio, int *track, int copy )
 {
     ffms_hnd_t *h = ( ffms_hnd_t* ) handle;
-    if( !audio->open_audio_file )
-        return AUDIO_ERROR;
-    return audio->open_audio_file( ah, h->filename, track, copy );
+    return open_external_audio( audio, h->filename, track, copy );
 }
 
 const cli_input_t ffms_input = { open_file, get_frame_total, x264_picture_alloc, read_frame, NULL, x264_picture_clean, close_file, open_audio };

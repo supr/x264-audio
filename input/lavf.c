@@ -274,11 +274,10 @@ static int close_file( hnd_t handle )
     return 0;
 }
 
-static int open_audio( hnd_t *handle, audio_hnd_t *ah, cli_audio_t *audio, int track, int copy )
+static audio_hnd_t *open_audio( hnd_t handle, cli_audio_t *audio, int *track, int copy )
 {
     lavf_hnd_t *h = ( lavf_hnd_t* ) handle;
-    h->audio = ah;
-    return audio->open_track_lavf( ah, h->lavf, track, copy );
+    return h->audio = open_audio_decoder( audio, h->lavf, track, copy );
 }
 
 const cli_input_t lavf_input = { open_file, get_frame_total, picture_alloc, read_frame, NULL, picture_clean, close_file, open_audio };

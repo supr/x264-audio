@@ -133,15 +133,11 @@ static int close_file( hnd_t handle )
     return 0;
 }
 
-int thread_open_audio( hnd_t handle, audio_hnd_t *audiohandle, cli_audio_t *audio, int track, int copy )
+audio_hnd_t *thread_open_audio( hnd_t handle, cli_audio_t *audio, int *track, int copy )
 {
     thread_hnd_t *h = handle;
-    if( h->input.open_audio )
-    {
-        return h->input.open_audio( h->p_handle, audiohandle, audio, track, copy );
-    }
-    else
-        return 0;
+    assert( h->input.open_audio );
+    return h->input.open_audio( h->p_handle, audio, track, copy );
 }
 
 cli_input_t thread_input = { open_file, get_frame_total, NULL, read_frame, release_frame, NULL, close_file };
