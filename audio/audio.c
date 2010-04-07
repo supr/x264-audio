@@ -114,7 +114,7 @@ void close_audio( audio_hnd_t *base )
     if( !base )
         return;
     audio_hnd_t *h;
-    while( h = audio_pop_filter( base ) )
+    while( ( h = audio_pop_filter( base ) ) )
     {
         assert( h->self && h->self->close_filter );
         h->self->close_filter( h );
