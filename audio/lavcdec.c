@@ -61,8 +61,8 @@ int try_open_track( audio_hnd_t *h, int track, int copy )
 
 static int open_track_lavf( audio_hnd_t *h, AVFormatContext *ctx, int track, int copy )
 {
-    if( ! h->opaque )
-        h->opaque = malloc( sizeof( opaque_t ) );
+    assert( !h->opaque );
+    h->opaque = malloc( sizeof( opaque_t ) );
     opaque_t *o = (opaque_t*) h->opaque;
     o->lavf = ctx;
 
