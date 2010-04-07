@@ -114,6 +114,7 @@ typedef struct
     int i_cost16x16direct;
     int i_cost8x8bi;
     int i_cost8x8direct[4];
+    int i_satd8x8bi[3][4]; /* [L0,L1,BI][8x8 0..3] SATD only */
     int i_cost16x8bi;
     int i_cost8x16bi;
     int i_rd16x16bi;
@@ -240,30 +241,29 @@ static UNUSED x264_pthread_mutex_t cost_ref_mutex = X264_PTHREAD_MUTEX_INITIALIZ
 
 int x264_analyse_init_costs( x264_t *h, int qp )
 {
-    int i, j;
     int lambda = x264_lambda_tab[qp];
     if( h->cost_mv[lambda] )
         return 0;
     /* factor of 4 from qpel, 2 from sign, and 2 because mv can be opposite from mvp */
     CHECKED_MALLOC( h->cost_mv[lambda], (4*4*2048 + 1) * sizeof(uint16_t) );
     h->cost_mv[lambda] += 2*4*2048;
-    for( i = 0; i <= 2*4*2048; i++ )
+    for( int i = 0; i <= 2*4*2048; i++ )
     {
         h->cost_mv[lambda][-i] =
         h->cost_mv[lambda][i]  = lambda * (log2f(i+1)*2 + 0.718f + !!i) + .5f;
     }
     x264_pthread_mutex_lock( &cost_ref_mutex );
-    for( i = 0; i < 3; i++ )
-        for( j = 0; j < 33; j++ )
+    for( int i = 0; i < 3; i++ )
+        for( int j = 0; j < 33; j++ )
             x264_cost_ref[lambda][i][j] = i ? lambda * bs_size_te( i, j ) : 0;
     x264_pthread_mutex_unlock( &cost_ref_mutex );
     if( h->param.analyse.i_me_method >= X264_ME_ESA && !h->cost_mv_fpel[lambda][0] )
     {
-        for( j=0; j<4; j++ )
+        for( int j = 0; j < 4; j++ )
         {
             CHECKED_MALLOC( h->cost_mv_fpel[lambda][j], (4*2048 + 1) * sizeof(uint16_t) );
             h->cost_mv_fpel[lambda][j] += 2*2048;
-            for( i = -2*2048; i < 2*2048; i++ )
+            for( int i = -2*2048; i < 2*2048; i++ )
                 h->cost_mv_fpel[lambda][j][i] = h->cost_mv[lambda][i*4+j];
         }
     }
@@ -274,21 +274,19 @@ fail:
 
 void x264_analyse_free_costs( x264_t *h )
 {
-    int i, j;
-    for( i = 0; i < 92; i++ )
+    for( int i = 0; i < 92; i++ )
     {
         if( h->cost_mv[i] )
             x264_free( h->cost_mv[i] - 2*4*2048 );
         if( h->cost_mv_fpel[i][0] )
-            for( j = 0; j < 4; j++ )
+            for( int j = 0; j < 4; j++ )
                 x264_free( h->cost_mv_fpel[i][j] - 2*2048 );
     }
 }
 
 void x264_analyse_weight_frame( x264_t *h, int end )
 {
-    int j;
-    for( j=0; j<h->i_ref0; j++ )
+    for( int j = 0; j < h->i_ref0; j++ )
     {
         if( h->sh.weight[j][0].weightfn )
         {
@@ -297,13 +295,11 @@ void x264_analyse_weight_frame( x264_t *h, int end )
             int i_padv = PADV << h->param.b_interlaced;
             int offset, height;
             uint8_t *src = frame->filtered[0] - frame->i_stride[0]*i_padv - PADH;
-            int k;
             height = X264_MIN( 16 + end + i_padv, h->fref0[j]->i_lines[0] + i_padv*2 ) - h->fenc->i_lines_weighted;
             offset = h->fenc->i_lines_weighted*frame->i_stride[0];
             h->fenc->i_lines_weighted += height;
             if( height )
-            {
-                for( k = j; k < h->i_ref0; k++ )
+                for( int k = j; k < h->i_ref0; k++ )
                     if( h->sh.weight[k][0].weightfn )
                     {
                         uint8_t *dst = h->fenc->weighted[k] - h->fenc->i_stride[0]*i_padv - PADH;
@@ -311,7 +307,6 @@ void x264_analyse_weight_frame( x264_t *h, int end )
                                                  src + offset, frame->i_stride[0],
                                                  width, height, &h->sh.weight[k][0] );
                     }
-            }
             break;
         }
     }
@@ -349,12 +344,12 @@ static void x264_mb_analyse_init_qp( x264_t *h, x264_mb_analysis_t *a, int i_qp 
 
 static void x264_mb_analyse_init( x264_t *h, x264_mb_analysis_t *a, int i_qp )
 {
-    int i = h->param.analyse.i_subpel_refine - (h->sh.i_type == SLICE_TYPE_B);
+    int subme = h->param.analyse.i_subpel_refine - (h->sh.i_type == SLICE_TYPE_B);
 
     /* mbrd == 1 -> RD mode decision */
     /* mbrd == 2 -> RD refinement */
     /* mbrd == 3 -> QPRD */
-    a->i_mbrd = (i>=6) + (i>=8) + (h->param.analyse.i_subpel_refine>=10);
+    a->i_mbrd = (subme>=6) + (subme>=8) + (h->param.analyse.i_subpel_refine>=10);
 
     x264_mb_analyse_init_qp( h, a, i_qp );
 
@@ -379,7 +374,6 @@ static void x264_mb_analyse_init( x264_t *h, x264_mb_analysis_t *a, int i_qp )
     /* II: Inter part P/B frame */
     if( h->sh.i_type != SLICE_TYPE_I )
     {
-        int i, j;
         int i_fmv_range = 4 * h->param.analyse.i_mv_range;
         // limit motion search to a slightly smaller range than the theoretical limit,
         // since the search may go a few iterations past its given range
@@ -411,11 +405,11 @@ static void x264_mb_analyse_init( x264_t *h, x264_mb_analysis_t *a, int i_qp )
             {
                 int pix_y = (h->mb.i_mb_y | h->mb.b_interlaced) * 16;
                 int thresh = pix_y + h->param.analyse.i_mv_range_thread;
-                for( i = (h->sh.i_type == SLICE_TYPE_B); i >= 0; i-- )
+                for( int i = (h->sh.i_type == SLICE_TYPE_B); i >= 0; i-- )
                 {
                     x264_frame_t **fref = i ? h->fref1 : h->fref0;
                     int i_ref = i ? h->i_ref1 : h->i_ref0;
-                    for( j=0; j<i_ref; j++ )
+                    for( int j = 0; j < i_ref; j++ )
                     {
                         x264_frame_cond_wait( fref[j]->orig, thresh );
                         thread_mvy_range = X264_MIN( thread_mvy_range, fref[j]->orig->i_lines_completed - pix_y );
@@ -468,7 +462,7 @@ static void x264_mb_analyse_init( x264_t *h, x264_mb_analysis_t *a, int i_qp )
             a->i_cost8x16bi    = COST_MAX;
         }
         else if( h->param.analyse.inter & X264_ANALYSE_PSUB8x8 )
-            for( i = 0; i < 4; i++ )
+            for( int i = 0; i < 4; i++ )
             {
                 a->l0.i_cost4x4[i] =
                 a->l0.i_cost8x4[i] =
@@ -640,7 +634,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
     uint8_t  *p_src = h->mb.pic.p_fenc[0];
     uint8_t  *p_dst = h->mb.pic.p_fdec[0];
 
-    int i, idx;
+    int idx;
     int b_merged_satd = !!h->pixf.intra_mbcmp_x3_16x16 && !h->mb.b_lossless;
 
     /*---------------- Try all mode and calculate their score ---------------*/
@@ -654,7 +648,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
         h->predict_16x16[I_PRED_16x16_P]( p_dst );
         a->i_satd_i16x16_dir[I_PRED_16x16_P] =
             h->pixf.mbcmp[PIXEL_16x16]( p_dst, FDEC_STRIDE, p_src, FENC_STRIDE );
-        for( i=0; i<4; i++ )
+        for( int i = 0; i < 4; i++ )
         {
             int cost = a->i_satd_i16x16_dir[i] += a->i_lambda * bs_size_ue(i);
             COPY2_IF_LT( a->i_satd_i16x16, cost, a->i_predict16x16, i );
@@ -685,8 +679,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
 
     /* Not heavily tuned */
     const uint8_t i16x16_thresh[11] = { 2, 2, 2, 3, 3, 4, 4, 4, 4, 4, 4 };
-    int thresh = i16x16_thresh[h->mb.i_subpel_refine];
-    if( a->b_fast_intra && a->i_satd_i16x16 > (thresh*i_satd_inter)>>1 )
+    if( a->b_fast_intra && a->i_satd_i16x16 > (i16x16_thresh[h->mb.i_subpel_refine]*i_satd_inter)>>1 )
         return;
 
     /* 8x8 prediction selection */
@@ -721,7 +714,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
                 int satd[9];
                 h->pixf.intra_mbcmp_x3_8x8( p_src_by, edge, satd );
                 satd[i_pred_mode] -= 3 * a->i_lambda;
-                for( i=2; i>=0; i-- )
+                for( int i = 2; i >= 0; i-- )
                 {
                     int cost = a->i_satd_i8x8_dir[i][idx] = satd[i];
                     COPY2_IF_LT( i_best, cost, a->i_predict8x8[idx], i );
@@ -781,8 +774,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
         }
         /* Not heavily tuned */
         const uint8_t i8x8_thresh[11] = { 4, 4, 4, 5, 5, 5, 6, 6, 6, 6, 6 };
-        int thresh = i8x8_thresh[h->mb.i_subpel_refine];
-        if( X264_MIN(i_cost, a->i_satd_i16x16) > (i_satd_inter*thresh)>>2 )
+        if( X264_MIN(i_cost, a->i_satd_i16x16) > (i_satd_inter*i8x8_thresh[h->mb.i_subpel_refine])>>2 )
             return;
     }
 
@@ -806,7 +798,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
             int i_best = COST_MAX;
             int i_pred_mode = x264_mb_predict_intra4x4_mode( h, idx );
 
-            const int8_t *predict_mode = predict_4x4_mode_available( h->mb.i_neighbour4[idx] );
+            predict_mode = predict_4x4_mode_available( h->mb.i_neighbour4[idx] );
 
             if( (h->mb.i_neighbour4[idx] & (MB_TOPRIGHT|MB_TOP)) == MB_TOP )
                 /* emulate missing topright samples */
@@ -817,7 +809,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
                 int satd[9];
                 h->pixf.intra_mbcmp_x3_4x4( p_src_by, p_dst_by, satd );
                 satd[i_pred_mode] -= 3 * a->i_lambda;
-                for( i=2; i>=0; i-- )
+                for( int i = 2; i >= 0; i-- )
                     COPY2_IF_LT( i_best, satd[i], a->i_predict4x4[idx], i );
                 predict_mode += 3;
             }
@@ -915,8 +907,7 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
 {
     uint8_t  *p_dst = h->mb.pic.p_fdec[0];
 
-    int i, idx, x, y;
-    int i_mode, i_thresh;
+    int x, y;
     uint64_t i_satd, i_best;
     h->mb.i_skip_intra = 0;
 
@@ -924,7 +915,7 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
     {
         int old_pred_mode = a->i_predict16x16;
         const int8_t *predict_mode = predict_16x16_mode_available( h->mb.i_neighbour_intra );
-        i_thresh = a->i_satd_i16x16_dir[old_pred_mode] * 9/8;
+        int i_thresh = a->i_satd_i16x16_dir[old_pred_mode] * 9/8;
         i_best = a->i_satd_i16x16;
         for( ; *predict_mode >= 0; predict_mode++ )
         {
@@ -943,11 +934,11 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
     {
         int8_t predict_mode_sorted[4];
         int i_max;
-        i_thresh = a->i_satd_i8x8chroma * 5/4;
+        int i_thresh = a->i_satd_i8x8chroma * 5/4;
 
         for( i_max = 0; *predict_mode >= 0; predict_mode++ )
         {
-            i_mode = *predict_mode;
+            int i_mode = *predict_mode;
             if( a->i_satd_i8x8chroma_dir[i_mode] < i_thresh && i_mode != a->i_predict8x8chroma )
                 predict_mode_sorted[i_max++] = i_mode;
         }
@@ -960,9 +951,9 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
              * coefs for the current chroma mode are still around, so we only
              * have to recount the bits. */
             i_best = x264_rd_cost_i8x8_chroma( h, i_chroma_lambda, a->i_predict8x8chroma, 0 );
-            for( i = 0; i < i_max; i++ )
+            for( int i = 0; i < i_max; i++ )
             {
-                i_mode = predict_mode_sorted[i];
+                int i_mode = predict_mode_sorted[i];
                 if( h->mb.b_lossless )
                     x264_predict_lossless_8x8_chroma( h, i_mode );
                 else
@@ -985,12 +976,12 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
     {
         uint32_t pels[4] = {0}; // doesn't need initting, just shuts up a gcc warning
         int i_nnz = 0;
-        for( idx = 0; idx < 16; idx++ )
+        for( int idx = 0; idx < 16; idx++ )
         {
             uint8_t *p_dst_by = p_dst + block_idx_xy_fdec[idx];
             i_best = COST_MAX64;
 
-            const int8_t *predict_mode = predict_4x4_mode_available( h->mb.i_neighbour4[idx] );
+            predict_mode = predict_4x4_mode_available( h->mb.i_neighbour4[idx] );
 
             if( (h->mb.i_neighbour4[idx] & (MB_TOPRIGHT|MB_TOP)) == MB_TOP )
                 /* emulate missing topright samples */
@@ -998,7 +989,7 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
 
             for( ; *predict_mode >= 0; predict_mode++ )
             {
-                i_mode = *predict_mode;
+                int i_mode = *predict_mode;
                 if( h->mb.b_lossless )
                     x264_predict_lossless_4x4( h, p_dst_by, idx, i_mode );
                 else
@@ -1029,27 +1020,26 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
     else if( h->mb.i_type == I_8x8 )
     {
         ALIGNED_ARRAY_16( uint8_t, edge,[33] );
-        for( idx = 0; idx < 4; idx++ )
+        for( int idx = 0; idx < 4; idx++ )
         {
             uint64_t pels_h = 0;
             uint8_t pels_v[7];
             uint16_t i_nnz[2] = {0}; //shut up gcc
             uint8_t *p_dst_by;
-            int j;
             int cbp_luma_new = 0;
-            i_thresh = a->i_satd_i8x8_dir[a->i_predict8x8[idx]][idx] * 11/8;
+            int i_thresh = a->i_satd_i8x8_dir[a->i_predict8x8[idx]][idx] * 11/8;
 
             i_best = COST_MAX64;
             x = idx&1;
             y = idx>>1;
 
             p_dst_by = p_dst + 8*x + 8*y*FDEC_STRIDE;
-            const int8_t *predict_mode = predict_4x4_mode_available( h->mb.i_neighbour8[idx] );
+            predict_mode = predict_4x4_mode_available( h->mb.i_neighbour8[idx] );
             h->predict_8x8_filter( p_dst_by, edge, h->mb.i_neighbour8[idx], ALL_NEIGHBORS );
 
             for( ; *predict_mode >= 0; predict_mode++ )
             {
-                i_mode = *predict_mode;
+                int i_mode = *predict_mode;
                 if( a->i_satd_i8x8_dir[i_mode][idx] > i_thresh )
                     continue;
 
@@ -1068,7 +1058,7 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
 
                     pels_h = M64( p_dst_by+7*FDEC_STRIDE );
                     if( !(idx&1) )
-                        for( j=0; j<7; j++ )
+                        for( int j = 0; j < 7; j++ )
                             pels_v[j] = p_dst_by[7+j*FDEC_STRIDE];
                     i_nnz[0] = M16( &h->mb.cache.non_zero_count[x264_scan8[4*idx+0]] );
                     i_nnz[1] = M16( &h->mb.cache.non_zero_count[x264_scan8[4*idx+2]] );
@@ -1077,7 +1067,7 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
             a->i_cbp_i8x8_luma = cbp_luma_new;
             M64( p_dst_by+7*FDEC_STRIDE ) = pels_h;
             if( !(idx&1) )
-                for( j=0; j<7; j++ )
+                for( int j = 0; j < 7; j++ )
                     p_dst_by[7+j*FDEC_STRIDE] = pels_v[j];
             M16( &h->mb.cache.non_zero_count[x264_scan8[4*idx+0]] ) = i_nnz[0];
             M16( &h->mb.cache.non_zero_count[x264_scan8[4*idx+2]] ) = i_nnz[1];
@@ -1116,7 +1106,7 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
 static void x264_mb_analyse_inter_p16x16( x264_t *h, x264_mb_analysis_t *a )
 {
     x264_me_t m;
-    int i_ref, i_mvc;
+    int i_mvc;
     ALIGNED_4( int16_t mvc[8][2] );
     int i_halfpel_thresh = INT_MAX;
     int *p_halfpel_thresh = h->mb.pic.i_fref[0]>1 ? &i_halfpel_thresh : NULL;
@@ -1126,7 +1116,7 @@ static void x264_mb_analyse_inter_p16x16( x264_t *h, x264_mb_analysis_t *a )
     LOAD_FENC( &m, h->mb.pic.p_fenc, 0, 0 );
 
     a->l0.me16x16.cost = INT_MAX;
-    for( i_ref = 0; i_ref < h->mb.pic.i_fref[0]; i_ref++ )
+    for( int i_ref = 0; i_ref < h->mb.pic.i_fref[0]; i_ref++ )
     {
         m.i_ref_cost = REF_COST( 0, i_ref );
         i_halfpel_thresh -= m.i_ref_cost;
@@ -1195,7 +1185,6 @@ static void x264_mb_analyse_inter_p16x16( x264_t *h, x264_mb_analysis_t *a )
 static void x264_mb_analyse_inter_p8x8_mixed_ref( x264_t *h, x264_mb_analysis_t *a )
 {
     x264_me_t m;
-    int i_ref, i;
     uint8_t  **p_fenc = h->mb.pic.p_fenc;
     int i_maxref = h->mb.pic.i_fref[0]-1;
 
@@ -1223,10 +1212,10 @@ static void x264_mb_analyse_inter_p8x8_mixed_ref( x264_t *h, x264_mb_analysis_t 
     }
     #undef CHECK_NEIGHBOUR
 
-    for( i_ref = 0; i_ref <= i_maxref; i_ref++ )
+    for( int i_ref = 0; i_ref <= i_maxref; i_ref++ )
         CP32( a->l0.mvc[i_ref][0], h->mb.mvr[0][i_ref][h->mb.i_mb_xy] );
 
-    for( i = 0; i < 4; i++ )
+    for( int i = 0; i < 4; i++ )
     {
         x264_me_t *l0m = &a->l0.me8x8[i];
         const int x8 = i%2;
@@ -1236,7 +1225,7 @@ static void x264_mb_analyse_inter_p8x8_mixed_ref( x264_t *h, x264_mb_analysis_t 
 
         LOAD_FENC( &m, p_fenc, 8*x8, 8*y8 );
         l0m->cost = INT_MAX;
-        for( i_ref = 0; i_ref <= i_maxref || i_ref == h->mb.ref_blind_dupe; )
+        for( int i_ref = 0; i_ref <= i_maxref || i_ref == h->mb.ref_blind_dupe; )
         {
             m.i_ref_cost = REF_COST( 0, i_ref );
 
@@ -1293,7 +1282,6 @@ static void x264_mb_analyse_inter_p8x8( x264_t *h, x264_mb_analysis_t *a )
     uint8_t  **p_fenc = h->mb.pic.p_fenc;
     int i_mvc;
     int16_t (*mvc)[2] = a->l0.mvc[i_ref];
-    int i;
 
     /* XXX Needed for x264_mb_predict_mv */
     h->mb.i_partition = D_8x8;
@@ -1301,7 +1289,7 @@ static void x264_mb_analyse_inter_p8x8( x264_t *h, x264_mb_analysis_t *a )
     i_mvc = 1;
     CP32( mvc[0], a->l0.me16x16.mv );
 
-    for( i = 0; i < 4; i++ )
+    for( int i = 0; i < 4; i++ )
     {
         x264_me_t *m = &a->l0.me8x8[i];
         const int x8 = i%2;
@@ -1343,12 +1331,11 @@ static void x264_mb_analyse_inter_p16x8( x264_t *h, x264_mb_analysis_t *a )
     x264_me_t m;
     uint8_t  **p_fenc = h->mb.pic.p_fenc;
     ALIGNED_4( int16_t mvc[3][2] );
-    int i, j;
 
     /* XXX Needed for x264_mb_predict_mv */
     h->mb.i_partition = D_16x8;
 
-    for( i = 0; i < 2; i++ )
+    for( int i = 0; i < 2; i++ )
     {
         x264_me_t *l0m = &a->l0.me16x8[i];
         const int minref = X264_MIN( a->l0.me8x8[2*i].i_ref, a->l0.me8x8[2*i+1].i_ref );
@@ -1360,7 +1347,7 @@ static void x264_mb_analyse_inter_p16x8( x264_t *h, x264_mb_analysis_t *a )
 
         LOAD_FENC( &m, p_fenc, 0, 8*i );
         l0m->cost = INT_MAX;
-        for( j = 0; j < i_ref8s; j++ )
+        for( int j = 0; j < i_ref8s; j++ )
         {
             const int i_ref = ref8[j];
             m.i_ref_cost = REF_COST( 0, i_ref );
@@ -1401,12 +1388,11 @@ static void x264_mb_analyse_inter_p8x16( x264_t *h, x264_mb_analysis_t *a )
     x264_me_t m;
     uint8_t  **p_fenc = h->mb.pic.p_fenc;
     ALIGNED_4( int16_t mvc[3][2] );
-    int i, j;
 
     /* XXX Needed for x264_mb_predict_mv */
     h->mb.i_partition = D_8x16;
 
-    for( i = 0; i < 2; i++ )
+    for( int i = 0; i < 2; i++ )
     {
         x264_me_t *l0m = &a->l0.me8x16[i];
         const int minref = X264_MIN( a->l0.me8x8[i].i_ref, a->l0.me8x8[i+2].i_ref );
@@ -1418,7 +1404,7 @@ static void x264_mb_analyse_inter_p8x16( x264_t *h, x264_mb_analysis_t *a )
 
         LOAD_FENC( &m, p_fenc, 8*i, 0 );
         l0m->cost = INT_MAX;
-        for( j = 0; j < i_ref8s; j++ )
+        for( int j = 0; j < i_ref8s; j++ )
         {
             const int i_ref = ref8[j];
             m.i_ref_cost = REF_COST( 0, i_ref );
@@ -1503,12 +1489,11 @@ static void x264_mb_analyse_inter_p4x4( x264_t *h, x264_mb_analysis_t *a, int i8
     uint8_t  **p_fref = h->mb.pic.p_fref[0][a->l0.me8x8[i8x8].i_ref];
     uint8_t  **p_fenc = h->mb.pic.p_fenc;
     const int i_ref = a->l0.me8x8[i8x8].i_ref;
-    int i4x4;
 
     /* XXX Needed for x264_mb_predict_mv */
     h->mb.i_partition = D_8x8;
 
-    for( i4x4 = 0; i4x4 < 4; i4x4++ )
+    for( int i4x4 = 0; i4x4 < 4; i4x4++ )
     {
         const int idx = 4*i8x8 + i4x4;
         const int x4 = block_idx_x[idx];
@@ -1543,12 +1528,11 @@ static void x264_mb_analyse_inter_p8x4( x264_t *h, x264_mb_analysis_t *a, int i8
     uint8_t  **p_fref = h->mb.pic.p_fref[0][a->l0.me8x8[i8x8].i_ref];
     uint8_t  **p_fenc = h->mb.pic.p_fenc;
     const int i_ref = a->l0.me8x8[i8x8].i_ref;
-    int i8x4;
 
     /* XXX Needed for x264_mb_predict_mv */
     h->mb.i_partition = D_8x8;
 
-    for( i8x4 = 0; i8x4 < 2; i8x4++ )
+    for( int i8x4 = 0; i8x4 < 2; i8x4++ )
     {
         const int idx = 4*i8x8 + 2*i8x4;
         const int x4 = block_idx_x[idx];
@@ -1580,12 +1564,11 @@ static void x264_mb_analyse_inter_p4x8( x264_t *h, x264_mb_analysis_t *a, int i8
     uint8_t  **p_fref = h->mb.pic.p_fref[0][a->l0.me8x8[i8x8].i_ref];
     uint8_t  **p_fenc = h->mb.pic.p_fenc;
     const int i_ref = a->l0.me8x8[i8x8].i_ref;
-    int i4x8;
 
     /* XXX Needed for x264_mb_predict_mv */
     h->mb.i_partition = D_8x8;
 
-    for( i4x8 = 0; i4x8 < 2; i4x8++ )
+    for( int i4x8 = 0; i4x8 < 2; i4x8++ )
     {
         const int idx = 4*i8x8 + i4x8;
         const int x4 = block_idx_x[idx];
@@ -1617,22 +1600,24 @@ static void x264_mb_analyse_inter_direct( x264_t *h, x264_mb_analysis_t *a )
     /* Assumes that fdec still contains the results of
      * x264_mb_predict_mv_direct16x16 and x264_mb_mc */
 
-    uint8_t **p_fenc = h->mb.pic.p_fenc;
-    uint8_t **p_fdec = h->mb.pic.p_fdec;
-    int i;
+    uint8_t *p_fenc = h->mb.pic.p_fenc[0];
+    uint8_t *p_fdec = h->mb.pic.p_fdec[0];
 
     a->i_cost16x16direct = a->i_lambda * i_mb_b_cost_table[B_DIRECT];
-    for( i = 0; i < 4; i++ )
-    {
-        const int x = (i&1)*8;
-        const int y = (i>>1)*8;
-        a->i_cost16x16direct +=
-        a->i_cost8x8direct[i] =
-            h->pixf.mbcmp[PIXEL_8x8]( &p_fenc[0][x+y*FENC_STRIDE], FENC_STRIDE, &p_fdec[0][x+y*FDEC_STRIDE], FDEC_STRIDE );
+    if( h->param.analyse.inter & X264_ANALYSE_BSUB16x16 )
+        for( int i = 0; i < 4; i++ )
+        {
+            const int x = (i&1)*8;
+            const int y = (i>>1)*8;
+            a->i_cost16x16direct +=
+            a->i_cost8x8direct[i] =
+                h->pixf.mbcmp[PIXEL_8x8]( &p_fenc[x+y*FENC_STRIDE], FENC_STRIDE, &p_fdec[x+y*FDEC_STRIDE], FDEC_STRIDE );
 
-        /* mb type cost */
-        a->i_cost8x8direct[i] += a->i_lambda * i_sub_mb_b_cost_table[D_DIRECT_8x8];
-    }
+            /* mb type cost */
+            a->i_cost8x8direct[i] += a->i_lambda * i_sub_mb_b_cost_table[D_DIRECT_8x8];
+        }
+    else
+        a->i_cost16x16direct += h->pixf.mbcmp[PIXEL_16x16]( p_fenc, FENC_STRIDE, p_fdec, FDEC_STRIDE );
 }
 
 static void x264_mb_analyse_inter_b16x16( x264_t *h, x264_mb_analysis_t *a )
@@ -1641,7 +1626,7 @@ static void x264_mb_analyse_inter_b16x16( x264_t *h, x264_mb_analysis_t *a )
     ALIGNED_ARRAY_16( uint8_t, pix1,[16*16] );
     uint8_t *src0, *src1;
     int stride0 = 16, stride1 = 16;
-    int i_ref, i_mvc, l;
+    int i_ref, i_mvc;
     ALIGNED_4( int16_t mvc[9][2] );
     int try_skip = a->b_try_skip;
     int list1_skipped = 0;
@@ -1657,7 +1642,7 @@ static void x264_mb_analyse_inter_b16x16( x264_t *h, x264_mb_analysis_t *a )
     /* 16x16 Search on list 0 and list 1 */
     a->l0.me16x16.cost = INT_MAX;
     a->l1.me16x16.cost = INT_MAX;
-    for( l = 1; l >= 0; )
+    for( int l = 1; l >= 0; )
     {
         x264_mb_analysis_list_t *lX = l ? &a->l1 : &a->l0;
 
@@ -1698,8 +1683,8 @@ static void x264_mb_analyse_inter_b16x16( x264_t *h, x264_mb_analysis_t *a )
             /* Fast skip detection. */
             if( i_ref == 0 && try_skip )
             {
-                if( abs(lX->bi16x16.mv[0]-h->mb.cache.direct_mv[l][0][0]) +
-                    abs(lX->bi16x16.mv[1]-h->mb.cache.direct_mv[l][0][1]) > 1 )
+                if( abs(lX->me16x16.mv[0]-h->mb.cache.direct_mv[l][0][0]) +
+                    abs(lX->me16x16.mv[1]-h->mb.cache.direct_mv[l][0][1]) > 1 )
                 {
                     try_skip = 0;
                 }
@@ -1864,7 +1849,6 @@ static inline void x264_mb_cache_mv_b8x16( x264_t *h, x264_mb_analysis_t *a, int
 static void x264_mb_analyse_inter_b8x8_mixed_ref( x264_t *h, x264_mb_analysis_t *a )
 {
     ALIGNED_ARRAY_8( uint8_t, pix,[2],[8*8] );
-    int i_ref, i, l;
     int i_maxref[2] = {h->mb.pic.i_fref[0]-1, h->mb.pic.i_fref[1]-1};
 
     /* early termination: if 16x16 chose ref 0, then evalute no refs older
@@ -1876,7 +1860,7 @@ static void x264_mb_analyse_inter_b8x8_mixed_ref( x264_t *h, x264_mb_analysis_t 
             i_maxref[l] = ref;\
     }
 
-    for( l = 0; l < 2; l++ )
+    for( int l = 0; l < 2; l++ )
     {
         x264_mb_analysis_list_t *lX = l ? &a->l1 : &a->l0;
         if( i_maxref[l] > 0 && lX->me16x16.i_ref == 0 &&
@@ -1897,7 +1881,7 @@ static void x264_mb_analyse_inter_b8x8_mixed_ref( x264_t *h, x264_mb_analysis_t 
 
     a->i_cost8x8bi = 0;
 
-    for( i = 0; i < 4; i++ )
+    for( int i = 0; i < 4; i++ )
     {
         int x8 = i%2;
         int y8 = i/2;
@@ -1909,12 +1893,12 @@ static void x264_mb_analyse_inter_b8x8_mixed_ref( x264_t *h, x264_mb_analysis_t 
         m.i_pixel = PIXEL_8x8;
         LOAD_FENC( &m, h->mb.pic.p_fenc, 8*x8, 8*y8 );
 
-        for( l = 0; l < 2; l++ )
+        for( int l = 0; l < 2; l++ )
         {
             x264_mb_analysis_list_t *lX = l ? &a->l1 : &a->l0;
 
             lX->me8x8[i].cost = INT_MAX;
-            for( i_ref = 0; i_ref <= i_maxref[l]; i_ref++ )
+            for( int i_ref = 0; i_ref <= i_maxref[l]; i_ref++ )
             {
                 m.i_ref_cost = REF_COST( l, i_ref );;
 
@@ -1926,7 +1910,10 @@ static void x264_mb_analyse_inter_b8x8_mixed_ref( x264_t *h, x264_mb_analysis_t 
                 m.cost += m.i_ref_cost;
 
                 if( m.cost < lX->me8x8[i].cost )
+                {
                     h->mc.memcpy_aligned( &lX->me8x8[i], &m, sizeof(x264_me_t) );
+                    a->i_satd8x8bi[l][i] = m.cost - ( m.cost_mv + m.i_ref_cost );
+                }
 
                 /* save mv for predicting other partitions within this MB */
                 CP32( lX->mvc[i_ref][i+1], m.mv );
@@ -1941,9 +1928,10 @@ static void x264_mb_analyse_inter_b8x8_mixed_ref( x264_t *h, x264_mb_analysis_t 
         h->mc.avg[PIXEL_8x8]( pix[0], 8, src[0], stride[0], src[1], stride[1],
                                 h->mb.bipred_weight[a->l0.me8x8[i].i_ref][a->l1.me8x8[i].i_ref] );
 
-        i_part_cost_bi = h->pixf.mbcmp[PIXEL_8x8]( a->l0.me8x8[i].p_fenc[0], FENC_STRIDE, pix[0], 8 )
-                        + a->l0.me8x8[i].cost_mv + a->l1.me8x8[i].cost_mv + a->l0.me8x8[i].i_ref_cost
-                        + a->l1.me8x8[i].i_ref_cost + a->i_lambda * i_sub_mb_b_cost_table[D_BI_8x8];
+        a->i_satd8x8bi[2][i] = h->pixf.mbcmp[PIXEL_8x8]( a->l0.me8x8[i].p_fenc[0], FENC_STRIDE, pix[0], 8 );
+        i_part_cost_bi = a->i_satd8x8bi[2][i] + a->l0.me8x8[i].cost_mv + a->l1.me8x8[i].cost_mv
+                         + a->l0.me8x8[i].i_ref_cost + a->l1.me8x8[i].i_ref_cost
+                         + a->i_lambda * i_sub_mb_b_cost_table[D_BI_8x8];
 
         a->l0.me8x8[i].cost += a->i_lambda * i_sub_mb_b_cost_table[D_L0_8x8];
         a->l1.me8x8[i].cost += a->i_lambda * i_sub_mb_b_cost_table[D_L1_8x8];
@@ -1969,14 +1957,13 @@ static void x264_mb_analyse_inter_b8x8( x264_t *h, x264_mb_analysis_t *a )
         { h->mb.pic.p_fref[0][a->l0.me16x16.i_ref],
           h->mb.pic.p_fref[1][a->l1.me16x16.i_ref] };
     ALIGNED_ARRAY_8( uint8_t, pix,[2],[8*8] );
-    int i, l;
 
     /* XXX Needed for x264_mb_predict_mv */
     h->mb.i_partition = D_8x8;
 
     a->i_cost8x8bi = 0;
 
-    for( i = 0; i < 4; i++ )
+    for( int i = 0; i < 4; i++ )
     {
         const int x8 = i%2;
         const int y8 = i/2;
@@ -1985,7 +1972,7 @@ static void x264_mb_analyse_inter_b8x8( x264_t *h, x264_mb_analysis_t *a )
         int stride[2] = {8,8};
         uint8_t *src[2];
 
-        for( l = 0; l < 2; l++ )
+        for( int l = 0; l < 2; l++ )
         {
             x264_mb_analysis_list_t *lX = l ? &a->l1 : &a->l0;
             x264_me_t *m = &lX->me8x8[i];
@@ -2000,6 +1987,7 @@ static void x264_mb_analyse_inter_b8x8( x264_t *h, x264_mb_analysis_t *a )
             x264_macroblock_cache_ref( h, x8*2, y8*2, 2, 2, l, lX->me16x16.i_ref );
             x264_mb_predict_mv( h, l, 4*i, 2, m->mvp );
             x264_me_search( h, m, &lX->me16x16.mv, 1 );
+            a->i_satd8x8bi[l][i] = m->cost - m->cost_mv;
             m->cost += m->i_ref_cost;
 
             x264_macroblock_cache_mv_ptr( h, 2*x8, 2*y8, 2, 2, l, m->mv );
@@ -2013,8 +2001,8 @@ static void x264_mb_analyse_inter_b8x8( x264_t *h, x264_mb_analysis_t *a )
             i_part_cost_bi += m->cost_mv + m->i_ref_cost;
         }
         h->mc.avg[PIXEL_8x8]( pix[0], 8, src[0], stride[0], src[1], stride[1], h->mb.bipred_weight[a->l0.me16x16.i_ref][a->l1.me16x16.i_ref] );
-        i_part_cost_bi += h->pixf.mbcmp[PIXEL_8x8]( a->l0.me8x8[i].p_fenc[0], FENC_STRIDE, pix[0], 8 )
-                        + a->i_lambda * i_sub_mb_b_cost_table[D_BI_8x8];
+        a->i_satd8x8bi[2][i] = h->pixf.mbcmp[PIXEL_8x8]( a->l0.me8x8[i].p_fenc[0], FENC_STRIDE, pix[0], 8 );
+        i_part_cost_bi += a->i_satd8x8bi[2][i] + a->i_lambda * i_sub_mb_b_cost_table[D_BI_8x8];
         a->l0.me8x8[i].cost += a->i_lambda * i_sub_mb_b_cost_table[D_L0_8x8];
         a->l1.me8x8[i].cost += a->i_lambda * i_sub_mb_b_cost_table[D_L1_8x8];
 
@@ -2037,12 +2025,11 @@ static void x264_mb_analyse_inter_b16x8( x264_t *h, x264_mb_analysis_t *a )
 {
     ALIGNED_ARRAY_16( uint8_t, pix,[2],[16*8] );
     ALIGNED_4( int16_t mvc[3][2] );
-    int i, j, l, i_ref;
 
     h->mb.i_partition = D_16x8;
     a->i_cost16x8bi = 0;
 
-    for( i = 0; i < 2; i++ )
+    for( int i = 0; i < 2; i++ )
     {
         int i_part_cost;
         int i_part_cost_bi = 0;
@@ -2052,15 +2039,15 @@ static void x264_mb_analyse_inter_b16x8( x264_t *h, x264_mb_analysis_t *a )
         m.i_pixel = PIXEL_16x8;
         LOAD_FENC( &m, h->mb.pic.p_fenc, 0, 8*i );
 
-        for( l = 0; l < 2; l++ )
+        for( int l = 0; l < 2; l++ )
         {
             x264_mb_analysis_list_t *lX = l ? &a->l1 : &a->l0;
             int ref8[2] = { lX->me8x8[2*i].i_ref, lX->me8x8[2*i+1].i_ref };
             int i_ref8s = ( ref8[0] == ref8[1] ) ? 1 : 2;
             lX->me16x8[i].cost = INT_MAX;
-            for( j = 0; j < i_ref8s; j++ )
+            for( int j = 0; j < i_ref8s; j++ )
             {
-                i_ref = ref8[j];
+                int i_ref = ref8[j];
                 m.i_ref_cost = REF_COST( l, i_ref );;
 
                 LOAD_HPELS( &m, h->mb.pic.p_fref[l][i_ref], l, i_ref, 0, 8*i );
@@ -2119,13 +2106,12 @@ static void x264_mb_analyse_inter_b16x8( x264_t *h, x264_mb_analysis_t *a )
 static void x264_mb_analyse_inter_b8x16( x264_t *h, x264_mb_analysis_t *a )
 {
     ALIGNED_ARRAY_8( uint8_t, pix,[2],[8*16] );
-    ALIGNED_4( int16_t mvc[2][2] );
-    int i, j, l, i_ref;
+    ALIGNED_4( int16_t mvc[3][2] );
 
     h->mb.i_partition = D_8x16;
     a->i_cost8x16bi = 0;
 
-    for( i = 0; i < 2; i++ )
+    for( int i = 0; i < 2; i++ )
     {
         int i_part_cost;
         int i_part_cost_bi = 0;
@@ -2135,15 +2121,15 @@ static void x264_mb_analyse_inter_b8x16( x264_t *h, x264_mb_analysis_t *a )
         m.i_pixel = PIXEL_8x16;
         LOAD_FENC( &m, h->mb.pic.p_fenc, 8*i, 0 );
 
-        for( l = 0; l < 2; l++ )
+        for( int l = 0; l < 2; l++ )
         {
             x264_mb_analysis_list_t *lX = l ? &a->l1 : &a->l0;
             int ref8[2] = { lX->me8x8[i].i_ref, lX->me8x8[i+2].i_ref };
             int i_ref8s = ( ref8[0] == ref8[1] ) ? 1 : 2;
             lX->me8x16[i].cost = INT_MAX;
-            for( j = 0; j < i_ref8s; j++ )
+            for( int j = 0; j < i_ref8s; j++ )
             {
-                i_ref = ref8[j];
+                int i_ref = ref8[j];
                 m.i_ref_cost = REF_COST( l, i_ref );
 
                 LOAD_HPELS( &m, h->mb.pic.p_fref[l][i_ref], l, i_ref, 8*i, 0 );
@@ -2234,23 +2220,22 @@ static void x264_mb_analyse_p_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd )
         h->mb.i_partition = D_8x8;
         if( h->param.analyse.inter & X264_ANALYSE_PSUB8x8 )
         {
-            int i;
             x264_macroblock_cache_ref( h, 0, 0, 2, 2, 0, a->l0.me8x8[0].i_ref );
             x264_macroblock_cache_ref( h, 2, 0, 2, 2, 0, a->l0.me8x8[1].i_ref );
             x264_macroblock_cache_ref( h, 0, 2, 2, 2, 0, a->l0.me8x8[2].i_ref );
             x264_macroblock_cache_ref( h, 2, 2, 2, 2, 0, a->l0.me8x8[3].i_ref );
             /* FIXME: In the 8x8 blocks where RDO isn't run, the NNZ values used for context selection
              * for future blocks are those left over from previous RDO calls. */
-            for( i = 0; i < 4; i++ )
+            for( int i = 0; i < 4; i++ )
             {
                 int costs[4] = {a->l0.i_cost4x4[i], a->l0.i_cost8x4[i], a->l0.i_cost4x8[i], a->l0.me8x8[i].cost};
-                int thresh = X264_MIN4( costs[0], costs[1], costs[2], costs[3] ) * 5 / 4;
+                int sub8x8_thresh = X264_MIN4( costs[0], costs[1], costs[2], costs[3] ) * 5 / 4;
                 int subtype, btype = D_L0_8x8;
                 uint64_t bcost = COST_MAX64;
                 for( subtype = D_L0_4x4; subtype <= D_L0_8x8; subtype++ )
                 {
                     uint64_t cost;
-                    if( costs[subtype] > thresh || (subtype == D_L0_8x8 && bcost == COST_MAX64) )
+                    if( costs[subtype] > sub8x8_thresh || (subtype == D_L0_8x8 && bcost == COST_MAX64) )
                         continue;
                     h->mb.i_sub_partition[i] = subtype;
                     x264_mb_cache_mv_p8x8( h, a, i );
@@ -2345,7 +2330,6 @@ static void x264_mb_analyse_b_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd_i
 static void x264_refine_bidir( x264_t *h, x264_mb_analysis_t *a )
 {
     int i_biweight;
-    int i;
 
     if( IS_INTRA(h->mb.i_type) )
         return;
@@ -2360,7 +2344,7 @@ static void x264_refine_bidir( x264_t *h, x264_mb_analysis_t *a )
             }
             break;
         case D_16x8:
-            for( i=0; i<2; i++ )
+            for( int i = 0; i < 2; i++ )
                 if( a->i_mb_partition16x8[i] == D_BI_8x8 )
                 {
                     i_biweight = h->mb.bipred_weight[a->l0.me16x8[i].i_ref][a->l1.me16x8[i].i_ref];
@@ -2368,7 +2352,7 @@ static void x264_refine_bidir( x264_t *h, x264_mb_analysis_t *a )
                 }
             break;
         case D_8x16:
-            for( i=0; i<2; i++ )
+            for( int i = 0; i < 2; i++ )
                 if( a->i_mb_partition8x16[i] == D_BI_8x8 )
                 {
                     i_biweight = h->mb.bipred_weight[a->l0.me8x16[i].i_ref][a->l1.me8x16[i].i_ref];
@@ -2376,7 +2360,7 @@ static void x264_refine_bidir( x264_t *h, x264_mb_analysis_t *a )
                 }
             break;
         case D_8x8:
-            for( i=0; i<4; i++ )
+            for( int i = 0; i < 4; i++ )
                 if( h->mb.i_sub_partition[i] == D_BI_8x8 )
                 {
                     i_biweight = h->mb.bipred_weight[a->l0.me8x8[i].i_ref][a->l1.me8x8[i].i_ref];
@@ -2390,13 +2374,12 @@ static inline void x264_mb_analyse_transform( x264_t *h )
 {
     if( x264_mb_transform_8x8_allowed( h ) && h->param.analyse.b_transform_8x8 && !h->mb.b_lossless )
     {
-        int i_cost4, i_cost8;
         /* Only luma MC is really needed, but the full MC is re-used in macroblock_encode. */
         x264_mb_mc( h );
 
-        i_cost8 = h->pixf.sa8d[PIXEL_16x16]( h->mb.pic.p_fenc[0], FENC_STRIDE,
+        int i_cost8 = h->pixf.sa8d[PIXEL_16x16]( h->mb.pic.p_fenc[0], FENC_STRIDE,
                                              h->mb.pic.p_fdec[0], FDEC_STRIDE );
-        i_cost4 = h->pixf.satd[PIXEL_16x16]( h->mb.pic.p_fenc[0], FENC_STRIDE,
+        int i_cost4 = h->pixf.satd[PIXEL_16x16]( h->mb.pic.p_fenc[0], FENC_STRIDE,
                                              h->mb.pic.p_fdec[0], FDEC_STRIDE );
 
         h->mb.b_transform_8x8 = i_cost8 < i_cost4;
@@ -2408,11 +2391,10 @@ static inline void x264_mb_analyse_transform_rd( x264_t *h, x264_mb_analysis_t *
 {
     if( x264_mb_transform_8x8_allowed( h ) && h->param.analyse.b_transform_8x8 )
     {
-        int i_rd8;
         x264_analyse_update_cache( h, a );
         h->mb.b_transform_8x8 ^= 1;
         /* FIXME only luma is needed, but the score for comparison already includes chroma */
-        i_rd8 = x264_rd_cost_mb( h, a->i_lambda2 );
+        int i_rd8 = x264_rd_cost_mb( h, a->i_lambda2 );
 
         if( *i_rd >= i_rd8 )
         {
@@ -2434,14 +2416,14 @@ static inline void x264_mb_analyse_transform_rd( x264_t *h, x264_mb_analysis_t *
  * trick. */
 static inline void x264_mb_analyse_qp_rd( x264_t *h, x264_mb_analysis_t *a )
 {
-    int bcost, cost, direction, failures, prevcost, origcost;
+    int bcost, cost, failures, prevcost, origcost;
     int orig_qp = h->mb.i_qp, bqp = h->mb.i_qp;
     int last_qp_tried = 0;
     origcost = bcost = x264_rd_cost_mb( h, a->i_lambda2 );
     int origcbp = h->mb.cbp[h->mb.i_mb_xy];
 
     /* If CBP is already zero, don't raise the quantizer any higher. */
-    for( direction = origcbp ? 1 : -1; direction >= -1; direction-=2 )
+    for( int direction = origcbp ? 1 : -1; direction >= -1; direction-=2 )
     {
         /* Without psy-RD, require monotonicity when moving quant away from previous
          * macroblock's quant; allow 1 failure when moving quant towards previous quant.
@@ -2544,7 +2526,6 @@ void x264_macroblock_analyse( x264_t *h )
 {
     x264_mb_analysis_t analysis;
     int i_cost = COST_MAX;
-    int i;
 
     h->mb.i_qp = x264_ratecontrol_qp( h );
     if( h->param.rc.i_aq_mode )
@@ -2620,7 +2601,7 @@ intra_analysis:
             assert( h->mb.cache.pskip_mv[1] <= h->mb.mv_max_spel[1] || h->i_thread_frames == 1 );
             /* Set up MVs for future predictors */
             if( b_skip )
-                for( i = 0; i < h->mb.pic.i_fref[0]; i++ )
+                for( int i = 0; i < h->mb.pic.i_fref[0]; i++ )
                     M32( h->mb.mvr[0][i][h->mb.i_mb_xy] ) = 0;
         }
         else
@@ -2637,7 +2618,7 @@ intra_analysis:
 
             if( h->mb.i_type == P_SKIP )
             {
-                for( i = 1; i < h->mb.pic.i_fref[0]; i++ )
+                for( int i = 1; i < h->mb.pic.i_fref[0]; i++ )
                     M32( h->mb.mvr[0][i][h->mb.i_mb_xy] ) = 0;
                 return;
             }
@@ -2665,7 +2646,7 @@ intra_analysis:
                 /* Do sub 8x8 */
                 if( flags & X264_ANALYSE_PSUB8x8 )
                 {
-                    for( i = 0; i < 4; i++ )
+                    for( int i = 0; i < 4; i++ )
                     {
                         x264_mb_analyse_inter_p4x4( h, &analysis, i );
                         if( analysis.l0.i_cost4x4[i] < analysis.l0.me8x8[i].cost )
@@ -2728,9 +2709,8 @@ intra_analysis:
             }
             else if( i_partition == D_8x8 )
             {
-                int i8x8;
                 i_cost = 0;
-                for( i8x8 = 0; i8x8 < 4; i8x8++ )
+                for( int i8x8 = 0; i8x8 < 4; i8x8++ )
                 {
                     switch( h->mb.i_sub_partition[i8x8] )
                     {
@@ -2852,9 +2832,8 @@ intra_analysis:
                 }
                 else if( i_partition == D_8x8 )
                 {
-                    int i8x8;
                     x264_analyse_update_cache( h, &analysis );
-                    for( i8x8 = 0; i8x8 < 4; i8x8++ )
+                    for( int i8x8 = 0; i8x8 < 4; i8x8++ )
                     {
                         if( h->mb.i_sub_partition[i8x8] == D_L0_8x8 )
                         {
@@ -2894,7 +2873,7 @@ intra_analysis:
         if( h->mb.b_direct_auto_write )
         {
             /* direct=auto heuristic: prefer whichever mode allows more Skip macroblocks */
-            for( i = 0; i < 2; i++ )
+            for( int i = 0; i < 2; i++ )
             {
                 int b_changed = 1;
                 h->sh.b_direct_spatial_mv_pred ^= 1;
@@ -2937,9 +2916,9 @@ intra_analysis:
             /* Set up MVs for future predictors */
             if( b_skip )
             {
-                for( i = 0; i < h->mb.pic.i_fref[0]; i++ )
+                for( int i = 0; i < h->mb.pic.i_fref[0]; i++ )
                     M32( h->mb.mvr[0][i][h->mb.i_mb_xy] ) = 0;
-                for( i = 0; i < h->mb.pic.i_fref[1]; i++ )
+                for( int i = 0; i < h->mb.pic.i_fref[1]; i++ )
                     M32( h->mb.mvr[1][i][h->mb.i_mb_xy] ) = 0;
             }
         }
@@ -2964,9 +2943,9 @@ intra_analysis:
 
             if( h->mb.i_type == B_SKIP )
             {
-                for( i = 1; i < h->mb.pic.i_fref[0]; i++ )
+                for( int i = 1; i < h->mb.pic.i_fref[0]; i++ )
                     M32( h->mb.mvr[0][i][h->mb.i_mb_xy] ) = 0;
-                for( i = 1; i < h->mb.pic.i_fref[1]; i++ )
+                for( int i = 1; i < h->mb.pic.i_fref[1]; i++ )
                     M32( h->mb.mvr[0][i][h->mb.i_mb_xy] ) = 0;
                 return;
             }
@@ -2999,28 +2978,64 @@ intra_analysis:
                 else
                     x264_mb_analyse_inter_b8x8( h, &analysis );
 
-                if( analysis.i_cost8x8bi < i_cost )
-                {
-                    i_type = B_8x8;
-                    i_partition = D_8x8;
-                    i_cost = analysis.i_cost8x8bi;
+                COPY3_IF_LT( i_cost, analysis.i_cost8x8bi, i_type, B_8x8, i_partition, D_8x8 );
 
-                    if( h->mb.i_sub_partition[0] == h->mb.i_sub_partition[1] ||
-                        h->mb.i_sub_partition[2] == h->mb.i_sub_partition[3] )
-                    {
-                        x264_mb_analyse_inter_b16x8( h, &analysis );
-                        COPY3_IF_LT( i_cost, analysis.i_cost16x8bi,
-                                     i_type, analysis.i_mb_type16x8,
-                                     i_partition, D_16x8 );
-                    }
-                    if( h->mb.i_sub_partition[0] == h->mb.i_sub_partition[2] ||
-                        h->mb.i_sub_partition[1] == h->mb.i_sub_partition[3] )
-                    {
-                        x264_mb_analyse_inter_b8x16( h, &analysis );
-                        COPY3_IF_LT( i_cost, analysis.i_cost8x16bi,
-                                     i_type, analysis.i_mb_type8x16,
-                                     i_partition, D_8x16 );
-                    }
+                /* Try to estimate the cost of b16x8/b8x16 based on the satd scores of the b8x8 modes */
+                int i_cost_est16x8bi = 0, i_cost_est8x16bi = 0;
+                int i_mb_type, i_partition16x8[2], i_partition8x16[2];
+                for( int i = 0; i < 2; i++ )
+                {
+                    int avg_l0_mv_ref_cost, avg_l1_mv_ref_cost;
+                    int i_l0_satd, i_l1_satd, i_bi_satd, i_best_cost;
+                    // 16x8
+                    i_best_cost = COST_MAX;
+                    i_l0_satd = analysis.i_satd8x8bi[0][i*2] + analysis.i_satd8x8bi[0][i*2+1];
+                    i_l1_satd = analysis.i_satd8x8bi[1][i*2] + analysis.i_satd8x8bi[1][i*2+1];
+                    i_bi_satd = analysis.i_satd8x8bi[2][i*2] + analysis.i_satd8x8bi[2][i*2+1];
+                    avg_l0_mv_ref_cost = ( analysis.l0.me8x8[i*2].cost_mv + analysis.l0.me8x8[i*2].i_ref_cost
+                                         + analysis.l0.me8x8[i*2+1].cost_mv + analysis.l0.me8x8[i*2+1].i_ref_cost + 1 ) >> 1;
+                    avg_l1_mv_ref_cost = ( analysis.l1.me8x8[i*2].cost_mv + analysis.l1.me8x8[i*2].i_ref_cost
+                                         + analysis.l1.me8x8[i*2+1].cost_mv + analysis.l1.me8x8[i*2+1].i_ref_cost + 1 ) >> 1;
+                    COPY2_IF_LT( i_best_cost, i_l0_satd + avg_l0_mv_ref_cost, i_partition16x8[i], D_L0_8x8 );
+                    COPY2_IF_LT( i_best_cost, i_l1_satd + avg_l1_mv_ref_cost, i_partition16x8[i], D_L1_8x8 );
+                    COPY2_IF_LT( i_best_cost, i_bi_satd + avg_l0_mv_ref_cost + avg_l1_mv_ref_cost, i_partition16x8[i], D_BI_8x8 );
+                    i_cost_est16x8bi += i_best_cost;
+
+                    // 8x16
+                    i_best_cost = COST_MAX;
+                    i_l0_satd = analysis.i_satd8x8bi[0][i] + analysis.i_satd8x8bi[0][i+2];
+                    i_l1_satd = analysis.i_satd8x8bi[1][i] + analysis.i_satd8x8bi[1][i+2];
+                    i_bi_satd = analysis.i_satd8x8bi[2][i] + analysis.i_satd8x8bi[2][i+2];
+                    avg_l0_mv_ref_cost = ( analysis.l0.me8x8[i].cost_mv + analysis.l0.me8x8[i].i_ref_cost
+                                         + analysis.l0.me8x8[i+2].cost_mv + analysis.l0.me8x8[i+2].i_ref_cost + 1 ) >> 1;
+                    avg_l1_mv_ref_cost = ( analysis.l1.me8x8[i].cost_mv + analysis.l1.me8x8[i].i_ref_cost
+                                         + analysis.l1.me8x8[i+2].cost_mv + analysis.l1.me8x8[i+2].i_ref_cost + 1 ) >> 1;
+                    COPY2_IF_LT( i_best_cost, i_l0_satd + avg_l0_mv_ref_cost, i_partition8x16[i], D_L0_8x8 );
+                    COPY2_IF_LT( i_best_cost, i_l1_satd + avg_l1_mv_ref_cost, i_partition8x16[i], D_L1_8x8 );
+                    COPY2_IF_LT( i_best_cost, i_bi_satd + avg_l0_mv_ref_cost + avg_l1_mv_ref_cost, i_partition8x16[i], D_BI_8x8 );
+                    i_cost_est8x16bi += i_best_cost;
+                }
+                i_mb_type = B_L0_L0 + (i_partition16x8[0]>>2) * 3 + (i_partition16x8[1]>>2);
+                i_cost_est16x8bi += analysis.i_lambda * i_mb_b16x8_cost_table[i_mb_type];
+                i_mb_type = B_L0_L0 + (i_partition8x16[0]>>2) * 3 + (i_partition8x16[1]>>2);
+                i_cost_est8x16bi += analysis.i_lambda * i_mb_b16x8_cost_table[i_mb_type];
+
+                /* We can gain a little speed by checking the mode with the lowest estimated cost first */
+                int try_16x8_first = i_cost_est16x8bi < i_cost_est8x16bi;
+                if( try_16x8_first && i_cost_est16x8bi < i_cost )
+                {
+                    x264_mb_analyse_inter_b16x8( h, &analysis );
+                    COPY3_IF_LT( i_cost, analysis.i_cost16x8bi, i_type, analysis.i_mb_type16x8, i_partition, D_16x8 );
+                }
+                if( i_cost_est8x16bi < i_cost )
+                {
+                    x264_mb_analyse_inter_b8x16( h, &analysis );
+                    COPY3_IF_LT( i_cost, analysis.i_cost8x16bi, i_type, analysis.i_mb_type8x16, i_partition, D_8x16 );
+                }
+                if( !try_16x8_first && i_cost_est16x8bi < i_cost )
+                {
+                    x264_mb_analyse_inter_b16x8( h, &analysis );
+                    COPY3_IF_LT( i_cost, analysis.i_cost16x8bi, i_type, analysis.i_mb_type16x8, i_partition, D_16x8 );
                 }
             }
 
@@ -3053,7 +3068,7 @@ intra_analysis:
             }
             else if( i_partition == D_16x8 )
             {
-                for( i=0; i<2; i++ )
+                for( int i = 0; i < 2; i++ )
                 {
                     if( analysis.i_mb_partition16x8[i] != D_L1_8x8 )
                         x264_me_refine_qpel( h, &analysis.l0.me16x8[i] );
@@ -3063,7 +3078,7 @@ intra_analysis:
             }
             else if( i_partition == D_8x16 )
             {
-                for( i=0; i<2; i++ )
+                for( int i = 0; i < 2; i++ )
                 {
                     if( analysis.i_mb_partition8x16[i] != D_L1_8x8 )
                         x264_me_refine_qpel( h, &analysis.l0.me8x16[i] );
@@ -3073,7 +3088,7 @@ intra_analysis:
             }
             else if( i_partition == D_8x8 )
             {
-                for( i=0; i<4; i++ )
+                for( int i = 0; i < 4; i++ )
                 {
                     x264_me_t *m;
                     int i_part_cost_old;
@@ -3173,7 +3188,7 @@ intra_analysis:
                 }
                 else if( i_partition == D_16x8 )
                 {
-                    for( i = 0; i < 2; i++ )
+                    for( int i = 0; i < 2; i++ )
                     {
                         h->mb.i_sub_partition[i*2] = h->mb.i_sub_partition[i*2+1] = analysis.i_mb_partition16x8[i];
                         if( analysis.i_mb_partition16x8[i] == D_L0_8x8 )
@@ -3189,7 +3204,7 @@ intra_analysis:
                 }
                 else if( i_partition == D_8x16 )
                 {
-                    for( i = 0; i < 2; i++ )
+                    for( int i = 0; i < 2; i++ )
                     {
                         h->mb.i_sub_partition[i] = h->mb.i_sub_partition[i+2] = analysis.i_mb_partition8x16[i];
                         if( analysis.i_mb_partition8x16[i] == D_L0_8x8 )
@@ -3205,7 +3220,7 @@ intra_analysis:
                 }
                 else if( i_partition == D_8x8 )
                 {
-                    for( i = 0; i < 4; i++ )
+                    for( int i = 0; i < 4; i++ )
                     {
                         if( h->mb.i_sub_partition[i] == D_L0_8x8 )
                             x264_me_refine_qpel_rd( h, &analysis.l0.me8x8[i], analysis.i_lambda2, i*4, 0 );
@@ -3254,18 +3269,16 @@ intra_analysis:
 /*-------------------- Update MB from the analysis ----------------------*/
 static void x264_analyse_update_cache( x264_t *h, x264_mb_analysis_t *a  )
 {
-    int i;
-
     switch( h->mb.i_type )
     {
         case I_4x4:
-            for( i = 0; i < 16; i++ )
+            for( int i = 0; i < 16; i++ )
                 h->mb.cache.intra4x4_pred_mode[x264_scan8[i]] = a->i_predict4x4[i];
 
             x264_mb_analyse_intra_chroma( h, a );
             break;
         case I_8x8:
-            for( i = 0; i < 4; i++ )
+            for( int i = 0; i < 4; i++ )
                 x264_macroblock_cache_intra8x8_pred( h, 2*(i&1), 2*(i>>1), a->i_predict8x8[i] );
 
             x264_mb_analyse_intra_chroma( h, a );
@@ -3311,7 +3324,7 @@ static void x264_analyse_update_cache( x264_t *h, x264_mb_analysis_t *a  )
             x264_macroblock_cache_ref( h, 2, 0, 2, 2, 0, a->l0.me8x8[1].i_ref );
             x264_macroblock_cache_ref( h, 0, 2, 2, 2, 0, a->l0.me8x8[2].i_ref );
             x264_macroblock_cache_ref( h, 2, 2, 2, 2, 0, a->l0.me8x8[3].i_ref );
-            for( i = 0; i < 4; i++ )
+            for( int i = 0; i < 4; i++ )
                 x264_mb_cache_mv_p8x8( h, a, i );
             break;
 
@@ -3334,7 +3347,7 @@ static void x264_analyse_update_cache( x264_t *h, x264_mb_analysis_t *a  )
 
         case B_8x8:
             /* optimize: cache might not need to be rewritten */
-            for( i = 0; i < 4; i++ )
+            for( int i = 0; i < 4; i++ )
                 x264_mb_cache_mv_b8x8( h, a, i, 1 );
             break;
 
@@ -3386,8 +3399,7 @@ static void x264_analyse_update_cache( x264_t *h, x264_mb_analysis_t *a  )
 #ifndef NDEBUG
     if( h->i_thread_frames > 1 && !IS_INTRA(h->mb.i_type) )
     {
-        int l;
-        for( l=0; l <= (h->sh.i_type == SLICE_TYPE_B); l++ )
+        for( int l = 0; l <= (h->sh.i_type == SLICE_TYPE_B); l++ )
         {
             int completed;
             int ref = h->mb.cache.ref[l][x264_scan8[0]];

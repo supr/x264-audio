@@ -451,8 +451,7 @@ int x264_param_apply_profile( x264_param_t *param, const char *profile )
 
 static int parse_enum( const char *arg, const char * const *names, int *dst )
 {
-    int i;
-    for( i = 0; names[i]; i++ )
+    for( int i = 0; names[i]; i++ )
         if( !strcmp( arg, names[i] ) )
         {
             *dst = i;
@@ -527,10 +526,10 @@ int x264_param_parse( x264_param_t *p, const char *name, const char *value )
 
     if( strchr( name, '_' ) ) // s/_/-/g
     {
-        char *p;
+        char *c;
         name_buf = strdup(name);
-        while( (p = strchr( name_buf, '_' )) )
-            *p = '-';
+        while( (c = strchr( name_buf, '_' )) )
+            *c = '-';
         name = name_buf;
     }
 
@@ -892,9 +891,9 @@ int x264_param_parse( x264_param_t *p, const char *name, const char *value )
         p->rc.f_aq_strength = atof(value);
     OPT("pass")
     {
-        int i = x264_clip3( atoi(value), 0, 3 );
-        p->rc.b_stat_write = i & 1;
-        p->rc.b_stat_read = i & 2;
+        int pass = x264_clip3( atoi(value), 0, 3 );
+        p->rc.b_stat_write = pass & 1;
+        p->rc.b_stat_read = pass & 2;
     }
     OPT("stats")
     {
@@ -1238,7 +1237,7 @@ char *x264_param2string( x264_param_t *p, int b_res )
         s += sprintf( s, " rc_lookahead=%d", p->rc.i_lookahead );
 
     s += sprintf( s, " rc=%s mbtree=%d", p->rc.i_rc_method == X264_RC_ABR ?
-                               ( p->rc.b_stat_read ? "2pass" : p->rc.i_vbv_buffer_size ? "cbr" : "abr" )
+                               ( p->rc.b_stat_read ? "2pass" : p->rc.i_vbv_buffer_size == p->rc.i_bitrate ? "cbr" : "abr" )
                                : p->rc.i_rc_method == X264_RC_CRF ? "crf" : "cqp", p->rc.b_mb_tree );
     if( p->rc.i_rc_method == X264_RC_ABR || p->rc.i_rc_method == X264_RC_CRF )
     {
@@ -1257,7 +1256,7 @@ char *x264_param2string( x264_param_t *p, int b_res )
             s += sprintf( s, " vbv_maxrate=%d vbv_bufsize=%d",
                           p->rc.i_vbv_max_bitrate, p->rc.i_vbv_buffer_size );
             if( p->rc.i_rc_method == X264_RC_CRF )
-                s += sprintf( s, " crf-max=%f", p->rc.f_rf_constant_max );
+                s += sprintf( s, " crf-max=%.1f", p->rc.f_rf_constant_max );
         }
     }
     else if( p->rc.i_rc_method == X264_RC_CQP )
