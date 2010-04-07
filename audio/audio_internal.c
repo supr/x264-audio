@@ -41,7 +41,8 @@ audio_hnd_t *audio_push_filter( audio_hnd_t *base, audio_hnd_t *filter )
 
 audio_hnd_t *audio_pop_filter( audio_hnd_t *base )
 {
-    assert( base );
+    if( !base )
+        return NULL;
     audio_hnd_t *pre_h = base, *h = base;
     while( h->next )
     {

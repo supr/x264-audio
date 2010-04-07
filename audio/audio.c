@@ -118,7 +118,8 @@ void close_audio( audio_hnd_t *base )
     {
         assert( h->self && h->self->close_filter );
         h->self->close_filter( h );
+        if( h == base )
+            base = NULL;
+        free( h );
     }
-    assert( h->self && h->self->close_filter );
-    h->self->close_filter( base );
 }
