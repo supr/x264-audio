@@ -1137,6 +1137,9 @@ static int Parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                     return -1;
                 break;
             case OPT_AUDIODEC:
+            {
+                // TODO: use parse_enum_name
+                int i;
                 for( i = 0; audio_decoder_names[i] && strcasecmp( audio_decoder_names[i], optarg ); )
                     i++;
                 if( !audio_decoder_names[i] )
@@ -1146,7 +1149,10 @@ static int Parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                 }
                 audio_decoder = optarg;
                 break;
+            }
             case OPT_AUDIOENC:
+            {
+                int i;
                 for( i = 0; audio_encoder_names[i] && strcasecmp( audio_encoder_names[i], optarg ); )
                     i++;
                 if( !audio_encoder_names[i] )
@@ -1156,6 +1162,7 @@ static int Parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                 }
                 audio_encoder = optarg;
                 break;
+            }
             case OPT_AUDIOCODEC:
                 audio_opt.encoder_name = optarg;
                 break;
