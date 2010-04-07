@@ -29,6 +29,11 @@
 
 typedef void *hnd_t;
 
+typedef struct {
+    int64_t num;
+    int64_t den;
+} rational_t;
+
 static inline int64_t gcd( int64_t a, int64_t b )
 {
     while( 1 )
@@ -53,6 +58,22 @@ static inline char *get_filename_extension( char *filename )
         ext--;
     ext += *ext == '.';
     return ext;
+}
+
+static inline int64_t to_time_base( int64_t ts, rational_t *time_base )
+{
+    return ts * time_base->den / time_base->num;
+}
+
+static inline int64_t from_time_base ( int64_t ts, rational_t *time_base )
+{
+    return ts * time_base->num / time_base->den;
+}
+
+static inline void merge_time_bases ( rational_t *out, rational_t *a, rational_t *b )
+{
+    out->num = lcm( a->num, b->num );
+    out->den = lcm( a->den, b->den );
 }
 
 #include "input/input.h"
