@@ -86,46 +86,6 @@ static int open_track_lavf( audio_hnd_t *h, AVFormatContext *ctx, int track, int
     return j >= 0 ? j : AUDIO_ERROR;
 }
 
-static int open_audio_file( audio_hnd_t *h, const char *filename, int track, int copy )
-{
-    if( ! h->opaque )
-        h->opaque = malloc( sizeof( opaque_t ) );
-    opaque_t *o = (opaque_t*) h->opaque;
-
-    av_register_all();
-    if( !strcmp( filename, "-" ) )
-        filename = "pipe:";
-
-    if( av_open_input_file( &o->lavf, filename, NULL, 0, NULL ) )
-    {
-        fprintf( stderr, "lavc [error]: could not open audio file\n" );
-        return AUDIO_ERROR;
-    }
-
-    if( av_find_stream_info( o->lavf ) < 0 )
-    {
-        av_close_input_file( o->lavf );
-        o->lavf = NULL;
-        fprintf( stderr, "lavc [error]: could not find stream info\n" );
-        return AUDIO_ERROR;
-    }
-
-    int j = open_track_lavf( h, o->lavf, track, copy );
-
-    if( j < 0 )
-    {
-        av_close_input_file( o->lavf );
-        o->lavf = NULL;
-        fprintf( stderr, "lavc [error]: could not open audio from file\n" );
-        return AUDIO_ERROR;
-    }
-
-    h->external = 1;
-    h->first_dts = AV_NOPTS_VALUE;
-    
-    return j;
-}
-
 static int64_t demux_audio( audio_hnd_t *h )
 {
     opaque_t *o = ( opaque_t* ) h->opaque;
@@ -231,7 +191,6 @@ static int close_filter( audio_hnd_t *h )
 
 const cli_audio_t lavcdec_audio = {
     .open_track_lavf = open_track_lavf,
-    .open_audio_file = open_audio_file,
     .demux_audio     = demux_audio,
     .decode_audio    = decode_audio,
     .close_filter    = close_filter

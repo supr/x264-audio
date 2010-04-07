@@ -56,7 +56,6 @@ typedef struct audio_opt_t
 typedef struct cli_audio_t
 {
     int (*open_track_lavf)( audio_hnd_t *handle, AVFormatContext *ctx, int track, int copy );
-    int (*open_audio_file)( audio_hnd_t *handle, const char *filename, int track, int copy );
     int (*open_encoder)( audio_hnd_t *handle, audio_opt_t *opt );
     int64_t (*demux_audio)( audio_hnd_t *handle );
     int (*decode_audio)( audio_hnd_t *handle, uint8_t *buffer, int buffer_length );
