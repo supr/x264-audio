@@ -1,18 +1,20 @@
 #include "audio/audio.h"
 #include "audio/audio_internal.h"
 
-audio_hnd_t *open_audio_decoder( cli_audio_t *dec, AVFormatContext *ctx, int track, int copy )
+audio_hnd_t *open_audio_decoder( cli_audio_t *dec, AVFormatContext *ctx, int *track, int copy )
 {
-    assert( dec );
+    assert( dec && dec->open_track_lavf );
     assert( ctx );
 
     audio_hnd_t *h = calloc( 1, sizeof( audio_hnd_t ) );
     h->self = dec;
-    if( dec->open_track_lavf( h, ctx, track, copy ) == AUDIO_ERROR )
+    int t = *track;
+    if( ( t = dec->open_track_lavf( h, ctx, t, copy ) ) == AUDIO_ERROR )
     {
         fprintf( stderr, "audio [error]: error opening audio decoder\n" );
         return NULL;
     }
+    *track = t;
 
     return h;
 }
