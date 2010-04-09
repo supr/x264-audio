@@ -41,8 +41,19 @@ enum
 extern const cli_audio_t lavcdec_audio;
 extern const cli_audio_t lavcenc_audio;
 
+/**
+ * Opens an audio decoder from the specified AVFormatContext.
+ * @returns NULL on error, a handle to the opened decoder on success.
+ */
 hnd_t open_audio_decoder( cli_audio_t *dec, struct AVFormatContext *ctx, int *track, int copy );
+/**
+ * Opens audio from the specified external file.
+ * @returns NULL on error, a handle to the opened decoder on success.
+ */
 hnd_t open_external_audio( cli_audio_t *dec, const char *filename, int *track, int copy );
+/**
+ * Closes the audio filter chain.
+ */
 void close_audio( hnd_t base );
 
 /**
