@@ -67,7 +67,34 @@ hnd_t open_external_audio( cli_audio_t *dec, const char *filename, int *track, i
     return h;
 }
 
+int64_t demux_audio( hnd_t handle )
+{
+    assert( handle );
+    audio_hnd_t *h = handle;
+    if( h->external )
+    {
+        assert( h->lavf );
+        AVPacket pkt;
+        av_init_packet( &pkt );
+        pkt.stream_index = TRACK_NONE;
+        int ret = 0;
+        while( pkt.stream_index != h->trackid && ret >= 0 )
+            ret = av_read_frame( h->lavf, &pkt );
+        if( ret < 0 )
+        {
+            fprintf( stderr, "lavc [error]: error demuxing audio packet\n" );
+            return ret;
+        }
 
+        if( audio_queue_avpacket( h, &pkt ) && h->first_dts == AV_NOPTS_VALUE )
+            h->first_dts = pkt.dts;
+
+        return pkt.dts;
+    }
+    // else, packets are queued by the video demuxer
+
+    return AUDIO_NONE;
+}
 
 int audio_queue_avpacket( hnd_t handle, AVPacket *pkt )
 {

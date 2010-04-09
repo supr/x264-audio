@@ -5,18 +5,17 @@
 int try_open_track( hnd_t handle, int track, int copy )
 {
     audio_hnd_t *h = handle;
-    opaque_t *o = ( opaque_t* ) h->opaque;
-    if( track < 0 || ( unsigned ) track >= o->lavf->nb_streams || o->lavf->streams[track]->codec->codec_type != CODEC_TYPE_AUDIO )
+    if( track < 0 || ( unsigned ) track >= h->lavf->nb_streams || h->lavf->streams[track]->codec->codec_type != CODEC_TYPE_AUDIO )
         return AUDIO_AGAIN;
 
-    AVCodecContext *ac = o->lavf->streams[track]->codec;
+    AVCodecContext *ac = h->lavf->streams[track]->codec;
 
     if( avcodec_open( ac, avcodec_find_decoder( ac->codec_id ) ) )
         return AUDIO_ERROR;
     else
     {
         h->time_base = malloc( sizeof( rational_t ) );
-        from_avrational( h->time_base, &o->lavf->streams[track]->time_base );
+        from_avrational( h->time_base, &h->lavf->streams[track]->time_base );
         h->info = malloc( sizeof( audio_info_t ) );
         h->info->codec_id       = ac->codec_id;
         h->info->codec_name     = ac->codec->name;
@@ -63,15 +62,13 @@ int try_open_track( hnd_t handle, int track, int copy )
 static int open_track_lavf( hnd_t handle, AVFormatContext *ctx, int track, int copy )
 {
     audio_hnd_t *h = handle;
-    assert( !h->opaque );
-    h->opaque = malloc( sizeof( opaque_t ) );
-    opaque_t *o = (opaque_t*) h->opaque;
-    o->lavf = ctx;
+    assert( !h->opaque && !h->lavf );
+    h->lavf = ctx;
 
     int i, j = -1;
     if( track == TRACK_ANY )
     {
-        for( i = 0; i < o->lavf->nb_streams && j < 0; i++ )
+        for( i = 0; i < h->lavf->nb_streams && j < 0; i++ )
             j = try_open_track( h, i, copy );
     }
     else
@@ -91,37 +88,9 @@ static int open_track_lavf( hnd_t handle, AVFormatContext *ctx, int track, int c
 static int decode_audio( hnd_t handle, uint8_t *buf, int buflen ) {
     audio_hnd_t *h = handle;
     if( h->trackid < 0 )
-static int64_t demux_audio( audio_hnd_t *h )
-{
-    opaque_t *o = ( opaque_t* ) h->opaque;
-    if( h->external )
-    {
-        AVPacket pkt;
-        av_init_packet( &pkt );
-        pkt.stream_index = TRACK_NONE;
-        int ret = 0;
-        while( pkt.stream_index != h->track && ret >= 0 )
-            ret = av_read_frame( o->lavf, &pkt );
-        if( ret < 0 )
-        {
-            fprintf( stderr, "lavc [error]: error demuxing audio packet\n" );
-            return ret;
-        }
-
-        if( audio_queue_avpacket( h, &pkt ) && h->first_dts == AV_NOPTS_VALUE )
-            h->first_dts = pkt.dts;
-
-        return pkt.dts;
-    }
-    // else, packets are queued by the video demuxer
-
-    return AUDIO_NONE;
-}
-
         return AUDIO_ERROR;
 
-    opaque_t *o = ( opaque_t* ) h->opaque;
-    AVCodecContext *ac = o->lavf->streams[h->track]->codec;
+    AVCodecContext *ac = h->lavf->streams[h->trackid]->codec;
     AVPacket *pkt = &h->pkt;
     AVPacket *pkt_temp = &h->pkt_temp;
 
@@ -183,9 +152,10 @@ static int close_filter( hnd_t handle )
     while( audio_dequeue_avpacket( h, pkt ) )
         av_free_packet( pkt );
 
-    if( ! h->copy && h->opaque )
+    if( ! h->copy )
     {
-        AVCodecContext *ac = ( ( opaque_t * ) h->opaque )->lavf->streams[h->track]->codec;
+        assert( h->lavf );
+        AVCodecContext *ac = h->lavf->streams[h->trackid]->codec;
         avcodec_close( ac );
     }
     free( h->info );

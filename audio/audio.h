@@ -52,6 +52,11 @@ hnd_t open_audio_decoder( cli_audio_t *dec, struct AVFormatContext *ctx, int *tr
  */
 hnd_t open_external_audio( cli_audio_t *dec, const char *filename, int *track, int copy );
 /**
+ * Demuxes and enqueues a packet for decoding.
+ * @returns AUDIO_NONE if the file is being demuxed by the video demuxer, the DTS of the enqueued packet on success.
+ */
+int64_t demux_audio( hnd_t handle );
+/**
  * Closes the audio filter chain.
  */
 void close_audio( hnd_t base );

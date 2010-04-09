@@ -44,6 +44,7 @@ typedef struct audio_hnd_t
     struct audio_hnd_t *next;
     struct audio_hnd_t *last;
     struct audio_hnd_t *enc;
+    AVFormatContext *lavf;
     hnd_t opaque;
 } audio_hnd_t;
 
