@@ -1,45 +1,47 @@
 #include "audio/audio_internal.h"
 
 
-void audio_readjust_last( audio_hnd_t *base )
+void audio_readjust_last( hnd_t base )
 {
     assert( base );
-    if( !base->next )
+    audio_hnd_t *b = base;
+    if( !b->next )
     {
-        base->last = NULL;
+        b->last = NULL;
         return;
     }
 
-    audio_hnd_t *h = base;
+    audio_hnd_t *h = b;
     while( h->next )
         h = h->next;
-    while( base->next )
+    while( b->next )
     {
-        base->last = h;
-        base = base->next;
+        b->last = h;
+        b = b->next;
     }
-    base->last = h;
+    b->last = h;
 }
 
-audio_hnd_t *audio_push_filter( audio_hnd_t *base, audio_hnd_t *filter )
+hnd_t audio_push_filter( hnd_t base, hnd_t filter )
 {
     if( !base || !filter )
         return NULL;
+    audio_hnd_t *b = base, *f = filter;
 
-    assert( !base->enc ); // Cannot append filters after the encoder
+    assert( !b->enc ); // Cannot append filters after the encoder
 
-    if( base->last )
+    if( b->last )
     {
-        base->last->next = filter;
-        audio_readjust_last( base );
+        b->last->next = filter;
+        audio_readjust_last( b );
     }
     else
-        base->next = base->last = filter;
+        b->next = b->last = filter;
 
-    return filter;
+    return f;
 }
 
-audio_hnd_t *audio_pop_filter( audio_hnd_t *base )
+hnd_t audio_pop_filter( hnd_t base )
 {
     if( !base )
         return NULL;

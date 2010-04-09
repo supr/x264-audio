@@ -1,7 +1,7 @@
 #include "audio/audio.h"
 #include "audio/audio_internal.h"
 
-audio_hnd_t *open_audio_decoder( cli_audio_t *dec, AVFormatContext *ctx, int *track, int copy )
+hnd_t open_audio_decoder( cli_audio_t *dec, struct AVFormatContext *ctx, int *track, int copy )
 {
     assert( dec && dec->open_track_lavf );
     assert( ctx );
@@ -12,6 +12,7 @@ audio_hnd_t *open_audio_decoder( cli_audio_t *dec, AVFormatContext *ctx, int *tr
     if( ( t = dec->open_track_lavf( h, ctx, t, copy ) ) == AUDIO_ERROR )
     {
         fprintf( stderr, "audio [error]: error opening audio decoder\n" );
+        free( h );
         return NULL;
     }
     *track = t;
@@ -19,7 +20,7 @@ audio_hnd_t *open_audio_decoder( cli_audio_t *dec, AVFormatContext *ctx, int *tr
     return h;
 }
 
-AVFormatContext *open_lavf_demuxer( const char *filename )
+static struct AVFormatContext *open_lavf_demuxer( const char *filename )
 {
     AVFormatContext *lavf;
 
@@ -57,8 +58,20 @@ fail:
     return NULL;
 }
 
-int audio_queue_avpacket( audio_hnd_t *h, AVPacket *pkt )
+hnd_t open_external_audio( cli_audio_t *dec, const char *filename, int *track, int copy )
 {
+    audio_hnd_t *h = open_audio_decoder( dec, open_lavf_demuxer( filename ), track, copy );
+    h->external = 1;
+    h->first_dts = AV_NOPTS_VALUE;
+
+    return h;
+}
+
+
+
+int audio_queue_avpacket( hnd_t handle, AVPacket *pkt )
+{
+    audio_hnd_t *h = handle;
     if( h->seek_dts && pkt->dts < h->seek_dts )
         return AUDIO_AGAIN;
     AVPacketList *pkt1 = av_malloc(sizeof(AVPacketList));
@@ -78,8 +91,9 @@ int audio_queue_avpacket( audio_hnd_t *h, AVPacket *pkt )
     return 1;
 }
 
-int audio_queue_rawdata( audio_hnd_t *h, uint8_t *buf, int buflen, int64_t dts )
+int audio_queue_rawdata( hnd_t handle, uint8_t *buf, int buflen, int64_t dts )
 {
+    audio_hnd_t *h = handle;
     AVPacket pkt;
     av_init_packet( &pkt );
     pkt.dts = to_time_base( dts, h->time_base );
@@ -93,8 +107,9 @@ int audio_queue_rawdata( audio_hnd_t *h, uint8_t *buf, int buflen, int64_t dts )
     return ret;
 }
 
-int audio_dequeue_avpacket( audio_hnd_t *h, AVPacket *pkt )
+int audio_dequeue_avpacket( hnd_t handle, AVPacket *pkt )
 {
+    audio_hnd_t *h = handle;
     AVPacketList *pkt1 = h->first_pkt;
     if (pkt1) {
         h->first_pkt = pkt1->next;
@@ -109,7 +124,7 @@ int audio_dequeue_avpacket( audio_hnd_t *h, AVPacket *pkt )
     return 0;
 }
 
-void close_audio( audio_hnd_t *base )
+void close_audio( hnd_t base )
 {
     if( !base )
         return;

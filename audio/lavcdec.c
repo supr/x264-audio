@@ -2,8 +2,9 @@
 #include "audio/audio_internal.h"
 #include "audio/lavc.h"
 
-int try_open_track( audio_hnd_t *h, int track, int copy )
+int try_open_track( hnd_t handle, int track, int copy )
 {
+    audio_hnd_t *h = handle;
     opaque_t *o = ( opaque_t* ) h->opaque;
     if( track < 0 || ( unsigned ) track >= o->lavf->nb_streams || o->lavf->streams[track]->codec->codec_type != CODEC_TYPE_AUDIO )
         return AUDIO_AGAIN;
@@ -59,8 +60,9 @@ int try_open_track( audio_hnd_t *h, int track, int copy )
     return track;
 }
 
-static int open_track_lavf( audio_hnd_t *h, AVFormatContext *ctx, int track, int copy )
+static int open_track_lavf( hnd_t handle, AVFormatContext *ctx, int track, int copy )
 {
+    audio_hnd_t *h = handle;
     assert( !h->opaque );
     h->opaque = malloc( sizeof( opaque_t ) );
     opaque_t *o = (opaque_t*) h->opaque;
@@ -81,11 +83,14 @@ static int open_track_lavf( audio_hnd_t *h, AVFormatContext *ctx, int track, int
     if( j >= 0 )
         fprintf( stderr, "lavc [audio]: opened track %d, codec %s\n", j, h->info->codec_name );
 
-    h->track = j;
+    h->trackid = j;
 
     return j >= 0 ? j : AUDIO_ERROR;
 }
 
+static int decode_audio( hnd_t handle, uint8_t *buf, int buflen ) {
+    audio_hnd_t *h = handle;
+    if( h->trackid < 0 )
 static int64_t demux_audio( audio_hnd_t *h )
 {
     opaque_t *o = ( opaque_t* ) h->opaque;
@@ -113,8 +118,6 @@ static int64_t demux_audio( audio_hnd_t *h )
     return AUDIO_NONE;
 }
 
-static int decode_audio( audio_hnd_t *h, uint8_t *buf, int buflen ) {
-    if( h->track < 0 )
         return AUDIO_ERROR;
 
     opaque_t *o = ( opaque_t* ) h->opaque;
@@ -172,8 +175,10 @@ static int decode_audio( audio_hnd_t *h, uint8_t *buf, int buflen ) {
     return AUDIO_AGAIN;
 }
 
-static int close_filter( audio_hnd_t *h )
+static int close_filter( hnd_t handle )
 {
+    audio_hnd_t *h = handle;
+    assert( h );
     AVPacket *pkt = NULL;
     while( audio_dequeue_avpacket( h, pkt ) )
         av_free_packet( pkt );

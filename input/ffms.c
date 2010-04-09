@@ -247,7 +247,7 @@ static int close_file( hnd_t handle )
     return 0;
 }
 
-static audio_hnd_t *open_audio( hnd_t handle, cli_audio_t *audio, int *track, int copy )
+static hnd_t open_audio( hnd_t handle, cli_audio_t *audio, int *track, int copy )
 {
     ffms_hnd_t *h = ( ffms_hnd_t* ) handle;
     return open_external_audio( audio, h->filename, track, copy );

@@ -2,8 +2,9 @@
 #include "audio/audio_internal.h"
 #include "audio/lavc.h"
 
-static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
+static int open_encoder( hnd_t handle, audio_opt_t *opt )
 {
+    audio_hnd_t *h = handle;
     h->enc = audio_push_filter( h, calloc( 1, sizeof( audio_hnd_t ) ) );
 
     audio_info_t *info = h->enc->info = malloc( sizeof( audio_info_t ) );
@@ -78,8 +79,9 @@ static int open_encoder( audio_hnd_t *h, audio_opt_t *opt )
     return 1;
 }
 
-static int encode_audio( audio_hnd_t *h, uint8_t *outbuf, int outbuflen, uint8_t *inbuf, int inbuflen )
+static int encode_audio( hnd_t handle, uint8_t *outbuf, int outbuflen, uint8_t *inbuf, int inbuflen )
 {
+    audio_hnd_t *h = handle;
     assert( h && h->enc );
     assert( outbuf && outbuflen );
     assert( inbuf && inbuflen );
@@ -108,8 +110,9 @@ static int encode_audio( audio_hnd_t *h, uint8_t *outbuf, int outbuflen, uint8_t
     return bytes < 0 ? AUDIO_ERROR : bytes == 0 ? AUDIO_AGAIN : bytes;
 }
 
-static int close_filter( audio_hnd_t *h )
+static int close_filter( hnd_t handle )
 {
+    audio_hnd_t *h = handle;
     assert( h && h->info );
 
     encoder_t *enc = (encoder_t*) h->opaque;

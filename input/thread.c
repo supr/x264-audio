@@ -133,7 +133,7 @@ static int close_file( hnd_t handle )
     return 0;
 }
 
-audio_hnd_t *thread_open_audio( hnd_t handle, cli_audio_t *audio, int *track, int copy )
+hnd_t thread_open_audio( hnd_t handle, cli_audio_t *audio, int *track, int copy )
 {
     thread_hnd_t *h = handle;
     assert( h->input.open_audio );

@@ -36,6 +36,7 @@
 #include "muxers.h"
 
 #include "audio/audio.h"
+#include "audio/audio_internal.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -838,7 +839,7 @@ static int select_output( const char *muxer, char *filename, x264_param_t *param
     return 0;
 }
 
-extern audio_hnd_t *thread_open_audio( hnd_t, cli_audio_t*, int*, int );
+extern hnd_t thread_open_audio( hnd_t, cli_audio_t*, int*, int );
 
 static int select_input( const char *demuxer, char *used_demuxer, char *filename,
                          hnd_t *p_handle, video_info_t *info, cli_input_opt_t *opt )

@@ -20,6 +20,7 @@
 
 #include "muxers.h"
 #include "flv_bytestream.h"
+#include "audio/audio_internal.h"
 
 #define CHECK(x)\
 do {\
@@ -250,8 +251,9 @@ static int write_headers( hnd_t handle, x264_nal_t *p_nal )
     return sei_size + sps_size + pps_size;
 }
 
-static int write_audio( hnd_t handle, audio_hnd_t *audio, int64_t dts, uint8_t *data, int len )
+static int write_audio( hnd_t handle, hnd_t haud, int64_t dts, uint8_t *data, int len )
 {
+    audio_hnd_t *audio = haud;
     flv_hnd_t *p_flv = handle;
     flv_audio_hnd_t *a_flv = p_flv->audio;
     flv_buffer *c = p_flv->c;
@@ -285,8 +287,10 @@ static int write_audio( hnd_t handle, audio_hnd_t *audio, int64_t dts, uint8_t *
     return 1 + len + aac;
 }
 
-static int init_audio( hnd_t *handle, audio_hnd_t *audio )
+static int init_audio( hnd_t handle, hnd_t haud )
 {
+    assert( haud );
+    audio_hnd_t *audio = haud;
     if( !audio->enc )
     {
         fprintf( stderr, "flv [error]: cannot initialize audio for uninitialized encoder\n" );
