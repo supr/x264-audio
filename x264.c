@@ -1500,74 +1500,22 @@ static void parse_qpfile( cli_opt_t *opt, x264_picture_t *pic, int i_frame )
 
 static int  Encode_audio( audio_hnd_t *haud, hnd_t *hout, int64_t maxdts )
 {
-    if( !output.write_audio ) {
-        fprintf( stderr, "x264 [error]: audio is not supported in this muxer!\n" );
-        return -1;
-    }
-
-    static int aud_samples_len   = 0;
-    static uint8_t *aud_samples  = NULL;
-    static uint8_t *encoded_data = NULL;
-    static int pos = 0;
-    if( aud_samples == NULL )
+    int bytes, total_bytes = 0;
+    int64_t ret, wret = AUDIO_ERROR;
+    do
     {
-        aud_samples_len = AUDIO_BUFSIZE * haud->info->channels * haud->info->samplesize;
-        aud_samples     = malloc( aud_samples_len );
-        encoded_data    = malloc( aud_samples_len );
-    }
-
-    static int64_t dts = AV_NOPTS_VALUE;
-    int len, written_bytes = 0, enclen;
-    
-    if( dts == AV_NOPTS_VALUE )
-    {
-        if( haud->first_dts )
-            dts = haud->first_dts;
-        else
-            dts = haud->framelen;
-    }
-
-    while( maxdts == -1 || dts <= maxdts )
-    {
-        do
+        while( ( ret = demux_audio( haud ) ) != AUDIO_OTHER && ret != AUDIO_QUEUE_FULL )
+            assert( ret >= 0 );
+        while( ( ret = audio_decode_main( haud ) ) > 0 || ret == AUDIO_QUEUE_FULL )
         {
-            len = aud_samples_len;
-            len = audio.decode_audio( haud, aud_samples + pos, len - pos );
-        } while( len == AUDIO_AGAIN );
-        if( dts > 0 && len > 0 )
-        {
-            int inlen = len + pos;
-            pos = enclen = 0;
-            while( ( maxdts == -1 || dts <= maxdts ) && inlen >= haud->framesize )
-            {
-                do
-                {
-                    enclen = audio_enc.encode_audio( haud, encoded_data, aud_samples_len, aud_samples + pos, inlen );
-                } while( enclen == AUDIO_AGAIN );
-
-                if( enclen > 0 )
-                {
-                    written_bytes += output.write_audio( hout, haud, dts, encoded_data, enclen );
-                    dts += haud->framelen;
-                    pos += haud->enc->copy ? 0 : haud->framesize;
-                    inlen -= haud->enc->copy ? enclen : haud->framesize;
-                }
-                else
-                    break;
-            }
-            if( pos && inlen > 0 )
-                memmove( aud_samples, aud_samples + pos, inlen );
-            if( !haud->enc->copy )
-                pos = inlen;
+            while( ( ( bytes = audio_encode( haud ) ) > 0 || bytes == AUDIO_QUEUE_FULL ) &&
+                   ( ( wret = audio_write( haud, maxdts ) ) > 0 ) )
+                total_bytes += bytes;
         }
-        else
-            break;
-    }
+    } while( wret >= 0 && ( ( maxdts >= 0 && ret < maxdts ) || maxdts == -1 ) );
 
-    return written_bytes;
+    return total_bytes;
 }
-
-#define AAC 1
 
 static int  Encode_frame( x264_t *h, cli_opt_t *cli, x264_param_t *param, x264_picture_t *pic, int64_t *last_pts )
 {
@@ -1589,9 +1537,6 @@ static int  Encode_frame( x264_t *h, cli_opt_t *cli, x264_param_t *param, x264_p
         if( cli->audio && cli->audio->enc )
         {
             int64_t maxdts = ( int64_t ) ( to_time_base( pic_out.i_dts, cli->audio->time_base ) * ( ( double ) param->i_timebase_num / param->i_timebase_den ) + 0.5 );
-            int64_t ret = cli->audio->last_pkt ? cli->audio->last_pkt->pkt.dts : ( cli->audio->external ? 1 : 0 );
-            while( ret > 0 && ret <= maxdts + ( cli->audio->first_dts ? 0 : cli->audio->seek_dts ) )
-                ret = audio.demux_audio( cli->audio );
             Encode_audio( cli->audio, cli->hout, maxdts + cli->audio->first_dts );
         }
         i_frame_size = output.write_frame( cli->hout, nal[0].p_payload, i_frame_size, &pic_out );
@@ -1814,8 +1759,10 @@ static int  Encode( x264_param_t *param, cli_opt_t *opt )
         if( opt->b_progress && i_frame_output % i_update_interval == 0 && i_frame_output )
             Print_status( i_start, i_frame_output, i_frame_total, i_file, param, last_pts );
     }
+    /*
     if( opt->audio )
         Encode_audio( opt->audio, opt->hout, -1 );
+    */
     if( pts_warning_cnt >= MAX_PTS_WARNING && param->i_log_level < X264_LOG_DEBUG )
         fprintf( stderr, "x264 [warning]: %d suppressed nonmonotonic pts warnings\n", pts_warning_cnt-MAX_PTS_WARNING );
 

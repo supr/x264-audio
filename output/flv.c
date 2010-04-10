@@ -66,7 +66,8 @@ typedef struct
 
     unsigned start;
 
-    flv_audio_hnd_t *audio;
+    audio_hnd_t *audio;
+    flv_audio_hnd_t *audiodata;
 } flv_hnd_t;
 
 static int write_header( flv_buffer *c )
@@ -149,7 +150,8 @@ static int set_param( hnd_t handle, x264_param_t *p_param )
 
     if( p_flv->audio )
     {
-        flv_audio_hnd_t *a_flv = p_flv->audio;
+        assert( p_flv->audio->opaque );
+        flv_audio_hnd_t *a_flv = ( (flv_hnd_t*) p_flv->audio->opaque )->audiodata;
         x264_put_amf_string( c, "audiocodecid" );
         x264_put_amf_double( c, a_flv->codecid >> FLV_AUDIO_CODECID_OFFSET );
         x264_put_amf_string( c, "audiosamplesize" );
@@ -180,7 +182,7 @@ static int set_param( hnd_t handle, x264_param_t *p_param )
 static int write_headers( hnd_t handle, x264_nal_t *p_nal )
 {
     flv_hnd_t *p_flv = handle;
-    flv_audio_hnd_t *a_flv = p_flv->audio;
+    flv_audio_hnd_t *a_flv = ( (flv_hnd_t*) p_flv->audio->opaque )->audiodata;
     flv_buffer *c = p_flv->c;
 
     int sps_size = p_nal[0].i_payload;
@@ -251,11 +253,13 @@ static int write_headers( hnd_t handle, x264_nal_t *p_nal )
     return sei_size + sps_size + pps_size;
 }
 
-static int write_audio( hnd_t handle, hnd_t haud, int64_t dts, uint8_t *data, int len )
+static int write_audio( hnd_t haud, int64_t dts, uint8_t *data, int len )
 {
+    assert( haud && data );
     audio_hnd_t *audio = haud;
-    flv_hnd_t *p_flv = handle;
-    flv_audio_hnd_t *a_flv = p_flv->audio;
+    flv_hnd_t *p_flv = audio->opaque;
+    assert( p_flv->audio );
+    flv_audio_hnd_t *a_flv = p_flv->audiodata;
     flv_buffer *c = p_flv->c;
 
     if( !a_flv )
@@ -287,45 +291,56 @@ static int write_audio( hnd_t handle, hnd_t haud, int64_t dts, uint8_t *data, in
     return 1 + len + aac;
 }
 
-static int init_audio( hnd_t handle, hnd_t haud )
+static cli_audio_t flv_audio_output = {
+    .write_audio      = write_audio
+};
+
+static int init_audio( hnd_t muxer, hnd_t haud )
 {
-    assert( haud );
+    assert( muxer && haud );
+    flv_hnd_t *p_flv = muxer;
     audio_hnd_t *audio = haud;
+    assert( !audio->muxer );
     if( !audio->enc )
     {
         fprintf( stderr, "flv [error]: cannot initialize audio for uninitialized encoder\n" );
         return 0;
     }
-    const char *codec_name = audio->enc->info->codec_name;
     audio_info_t *info = audio->enc->info;
+    const char *codec_name = info->codec_name;
 
-    flv_hnd_t       *p_flv = ( flv_hnd_t* ) handle;
-    flv_audio_hnd_t *a_flv = p_flv->audio = malloc( sizeof( flv_audio_hnd_t ) );
+    audio->muxer          = p_flv->audio     = calloc( 1, sizeof( audio_hnd_t ) );
+    p_flv->audio->opaque  = p_flv;
+    flv_audio_hnd_t *o = p_flv->audiodata = malloc( sizeof( flv_audio_hnd_t ) );
+
+    p_flv->audio->self      = &flv_audio_output;
+    p_flv->audio->time_base = audio->enc->time_base;
+    assert( p_flv->audio->time_base );
 
     int header = 0;
     if( !strcmp( codec_name, "mp3" ) || !strcmp( codec_name, "libmp3lame" ) )
-        a_flv->codecid = FLV_CODECID_MP3;
+        o->codecid = FLV_CODECID_MP3;
     else if( !strcmp( codec_name, "aac" ) || !strcmp( codec_name, "libfaac" ) )
     {
-        a_flv->codecid        = FLV_CODECID_AAC;
-        a_flv->extradata_size = info->extradata_size;
-        a_flv->extradata      = info->extradata;
+        o->codecid        = FLV_CODECID_AAC;
+        o->extradata_size = info->extradata_size;
+        o->extradata      = info->extradata;
     }
     else if( !strcmp( codec_name, "raw" ) )
-        a_flv->codecid = FLV_CODECID_RAW;
+        o->codecid = FLV_CODECID_RAW;
     else if( !strcmp( codec_name, "adpcm_swf" ) )
-        a_flv->codecid = FLV_CODECID_ADPCM;
+        o->codecid = FLV_CODECID_ADPCM;
     else
     {
         fprintf( stderr, "flv [error]: unsupported audio codec %s\n", codec_name );
         goto error;
     }
 
-    header |= a_flv->codecid;
+    header |= o->codecid;
 
-    a_flv->samplerate = info->samplerate;
-    a_flv->samplesize = info->samplesize;
-    a_flv->stereo     = info->channels == 2;
+    o->samplerate = info->samplerate;
+    o->samplesize = info->samplesize;
+    o->stereo     = info->channels == 2;
 
     switch( info->samplerate )
     {
@@ -373,13 +388,15 @@ static int init_audio( hnd_t handle, hnd_t haud )
         goto error;
     }
 
-    a_flv->header = header;
+    o->header = header;
 
     return 1;
 
 error:
+    free( o );
     free( p_flv->audio );
     p_flv->audio = NULL;
+    audio->muxer = NULL; // alias to p_flv->audio
 
     return 0;
 }
@@ -482,4 +499,4 @@ static int close_file( hnd_t handle, int64_t largest_pts, int64_t second_largest
     return 0;
 }
 
-const cli_output_t flv_output = { open_file, set_param, write_headers, write_frame, close_file, init_audio, write_audio };
+const cli_output_t flv_output = { open_file, set_param, write_headers, write_frame, close_file, init_audio };

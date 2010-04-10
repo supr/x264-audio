@@ -68,7 +68,12 @@ static int open_encoder( hnd_t handle, audio_opt_t *opt )
         info->extradata      = ctx->extradata;
         info->extradata_size = ctx->extradata_size;
 
-        h->enc->framelen  = to_time_base( ctx->frame_size, h->time_base ) / ctx->sample_rate;
+        h->enc->time_base = malloc( sizeof( rational_t ) );
+        if( ctx->time_base.num == 0 || ctx->time_base.den == 0 )
+            memcpy( h->enc->time_base, h->time_base, sizeof( rational_t ) );
+        else
+            from_avrational( h->enc->time_base, &ctx->time_base );
+        h->enc->framelen  = to_time_base( ctx->frame_size, h->enc->time_base ) / ctx->sample_rate;
         h->enc->framesize = ctx->frame_size * ctx->channels * info->samplesize;
 
         encoder_t *enc = calloc( 1, sizeof( encoder_t ) );
@@ -124,9 +129,9 @@ static int close_filter( hnd_t handle )
         free( enc );
     }
 
-    AVPacket *pkt = NULL;
-    while( audio_dequeue_avpacket( h, pkt ) )
-        av_free_packet( pkt );
+    AVPacket pkt = {};
+    while( audio_dequeue_avpacket( h, &pkt ) )
+        av_free_packet( &pkt );
     free( h->info );
 
     return 0;

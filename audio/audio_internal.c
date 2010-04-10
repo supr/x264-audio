@@ -16,7 +16,9 @@ void audio_readjust_last( hnd_t base )
         h = h->next;
     while( b->next )
     {
-        b->last = h;
+        b->last  = h;
+        h->enc   = b->enc;
+        h->muxer = b->muxer;
         b = b->next;
     }
     b->last = h;

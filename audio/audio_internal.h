@@ -10,7 +10,15 @@
 #include "libavcodec/avcodec.h"
 
 #define AUDIO_BUFSIZE (AVCODEC_MAX_AUDIO_FRAME_SIZE*3/2)
-#define AUDIO_MAX_QUEUE_LENGTH 50
+#define AUDIO_MAX_QUEUE_LENGTH 10
+
+enum FilterType
+{
+    FILTER_TYPE_NONE,
+    FILTER_TYPE_DECODER,
+    FILTER_TYPE_ENCODER,
+    FILTER_TYPE_TRANSFORM
+};
 
 /* properties of the source given by the demuxer */
 typedef struct audio_info_t
@@ -27,6 +35,7 @@ typedef struct audio_info_t
 
 typedef struct audio_hnd_t
 {
+    enum FilterType type;
     struct cli_audio_t *self;
     audio_info_t *info;
     AVPacketList *first_pkt, *last_pkt;
@@ -44,6 +53,7 @@ typedef struct audio_hnd_t
     struct audio_hnd_t *next;
     struct audio_hnd_t *last;
     struct audio_hnd_t *enc;
+    struct audio_hnd_t *muxer;
     AVFormatContext *lavf;
     hnd_t opaque;
 } audio_hnd_t;

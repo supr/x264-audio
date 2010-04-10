@@ -130,6 +130,7 @@ static int decode_audio( hnd_t handle, uint8_t *buf, int buflen ) {
 
             return datalen;
         }
+        assert( len >= 0 );
     }
 
     if( pkt->data )
@@ -148,9 +149,9 @@ static int close_filter( hnd_t handle )
 {
     audio_hnd_t *h = handle;
     assert( h );
-    AVPacket *pkt = NULL;
-    while( audio_dequeue_avpacket( h, pkt ) )
-        av_free_packet( pkt );
+    AVPacket pkt = {};
+    while( audio_dequeue_avpacket( h, &pkt ) )
+        av_free_packet( &pkt );
 
     if( ! h->copy )
     {
