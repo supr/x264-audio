@@ -76,9 +76,9 @@ static void x264_cabac_mb_type( x264_t *h, x264_cabac_t *cb )
     if( h->sh.i_type == SLICE_TYPE_I )
     {
         int ctx = 0;
-        if( h->mb.i_mb_type_left >= 0 && h->mb.i_mb_type_left != I_4x4 )
+        if( (h->mb.i_neighbour & MB_LEFT) && h->mb.i_mb_type_left != I_4x4 )
             ctx++;
-        if( h->mb.i_mb_type_top >= 0 && h->mb.i_mb_type_top != I_4x4 )
+        if( (h->mb.i_neighbour & MB_TOP) && h->mb.i_mb_type_top != I_4x4 )
             ctx++;
 
         x264_cabac_mb_type_intra( h, cb, i_mb_type, 3+ctx, 3+3, 3+4, 3+5, 3+6, 3+7 );
@@ -110,9 +110,9 @@ static void x264_cabac_mb_type( x264_t *h, x264_cabac_t *cb )
     else //if( h->sh.i_type == SLICE_TYPE_B )
     {
         int ctx = 0;
-        if( h->mb.i_mb_type_left >= 0 && h->mb.i_mb_type_left != B_SKIP && h->mb.i_mb_type_left != B_DIRECT )
+        if( (h->mb.i_neighbour & MB_LEFT) && h->mb.i_mb_type_left != B_SKIP && h->mb.i_mb_type_left != B_DIRECT )
             ctx++;
-        if( h->mb.i_mb_type_top >= 0 && h->mb.i_mb_type_top != B_SKIP && h->mb.i_mb_type_top != B_DIRECT )
+        if( (h->mb.i_neighbour & MB_TOP) && h->mb.i_mb_type_top != B_SKIP && h->mb.i_mb_type_top != B_DIRECT )
             ctx++;
 
         if( i_mb_type == B_DIRECT )
@@ -191,11 +191,11 @@ static void x264_cabac_mb_intra4x4_pred_mode( x264_cabac_t *cb, int i_pred, int 
 
 static void x264_cabac_mb_intra_chroma_pred_mode( x264_t *h, x264_cabac_t *cb )
 {
-    const int i_mode = x264_mb_pred_mode8x8c_fix[ h->mb.i_chroma_pred_mode ];
+    const int i_mode = x264_mb_pred_mode8x8c_fix[h->mb.i_chroma_pred_mode];
     int       ctx = 0;
 
     /* No need to test for I4x4 or I_16x16 as cache_save handle that */
-    if( (h->mb.i_neighbour & MB_LEFT) && h->mb.chroma_pred_mode[h->mb.i_mb_xy - 1] != 0 )
+    if( (h->mb.i_neighbour & MB_LEFT) && h->mb.chroma_pred_mode[h->mb.i_mb_left_xy] != 0 )
         ctx++;
     if( (h->mb.i_neighbour & MB_TOP) && h->mb.chroma_pred_mode[h->mb.i_mb_top_xy] != 0 )
         ctx++;
@@ -237,7 +237,7 @@ static void x264_cabac_mb_cbp_chroma( x264_t *h, x264_cabac_t *cb )
         ctx = 4;
         if( cbp_a == 0x20 ) ctx++;
         if( cbp_b == 0x20 ) ctx += 2;
-        x264_cabac_encode_decision_noup( cb, 77 + ctx, h->mb.i_cbp_chroma > 1 );
+        x264_cabac_encode_decision_noup( cb, 77 + ctx, h->mb.i_cbp_chroma >> 1 );
     }
 }
 
@@ -277,8 +277,8 @@ static void x264_cabac_mb_qp_delta( x264_t *h, x264_cabac_t *cb )
 #if !RDO_SKIP_BS
 void x264_cabac_mb_skip( x264_t *h, int b_skip )
 {
-    int ctx = (h->mb.i_mb_type_left >= 0 && !IS_SKIP( h->mb.i_mb_type_left ))
-            + (h->mb.i_mb_type_top >= 0 && !IS_SKIP( h->mb.i_mb_type_top ))
+    int ctx = ((h->mb.i_neighbour & MB_LEFT) && !IS_SKIP( h->mb.i_mb_type_left ))
+            + ((h->mb.i_neighbour & MB_TOP) && !IS_SKIP( h->mb.i_mb_type_top ))
             + (h->sh.i_type == SLICE_TYPE_P ? 11 : 24);
     x264_cabac_encode_decision( &h->cabac, ctx, b_skip );
 }
@@ -960,7 +960,7 @@ void x264_macroblock_write_cabac( x264_t *h, x264_cabac_t *cb )
                     block_residual_write_cabac_cbf( h, cb, DCT_LUMA_4x4, i, h->dct.luma4x4[i], b_intra );
         }
 
-        if( h->mb.i_cbp_chroma&0x03 )    /* Chroma DC residual present */
+        if( h->mb.i_cbp_chroma ) /* Chroma DC residual present */
         {
             block_residual_write_cabac_cbf( h, cb, DCT_CHROMA_DC, 25, h->dct.chroma_dc[0], b_intra );
             block_residual_write_cabac_cbf( h, cb, DCT_CHROMA_DC, 26, h->dct.chroma_dc[1], b_intra );

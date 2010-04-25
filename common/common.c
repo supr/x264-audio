@@ -70,7 +70,7 @@ void x264_param_default( x264_param_t *param )
     /* Encoder parameters */
     param->i_frame_reference = 3;
     param->i_keyint_max = 250;
-    param->i_keyint_min = 25;
+    param->i_keyint_min = X264_KEYINT_MIN_AUTO;
     param->i_bframe = 3;
     param->i_scenecut_threshold = 40;
     param->i_bframe_adaptive = X264_B_ADAPT_FAST;
@@ -405,6 +405,7 @@ void x264_param_apply_fastfirstpass( x264_param_t *param )
         param->analyse.i_me_method = X264_ME_DIA;
         param->analyse.i_subpel_refine = X264_MIN( 2, param->analyse.i_subpel_refine );
         param->analyse.i_trellis = 0;
+        param->analyse.b_fast_pskip = 1;
     }
 }
 
@@ -613,7 +614,7 @@ int x264_param_parse( x264_param_t *p, const char *name, const char *value )
     }
     OPT("fps")
     {
-        if( sscanf( value, "%d/%d", &p->i_fps_num, &p->i_fps_den ) == 2 )
+        if( sscanf( value, "%u/%u", &p->i_fps_num, &p->i_fps_den ) == 2 )
             ;
         else
         {
@@ -1118,11 +1119,11 @@ void x264_free( void *p )
 /****************************************************************************
  * x264_reduce_fraction:
  ****************************************************************************/
-void x264_reduce_fraction( int *n, int *d )
+void x264_reduce_fraction( uint32_t *n, uint32_t *d )
 {
-    int a = *n;
-    int b = *d;
-    int c;
+    uint32_t a = *n;
+    uint32_t b = *d;
+    uint32_t c;
     if( !a || !b )
         return;
     c = a % b;
@@ -1184,8 +1185,8 @@ char *x264_param2string( x264_param_t *p, int b_res )
     if( b_res )
     {
         s += sprintf( s, "%dx%d ", p->i_width, p->i_height );
-        s += sprintf( s, "fps=%d/%d ", p->i_fps_num, p->i_fps_den );
-        s += sprintf( s, "timebase=%d/%d ", p->i_timebase_num, p->i_timebase_den );
+        s += sprintf( s, "fps=%u/%u ", p->i_fps_num, p->i_fps_den );
+        s += sprintf( s, "timebase=%u/%u ", p->i_timebase_num, p->i_timebase_den );
     }
 
     s += sprintf( s, "cabac=%d", p->b_cabac );

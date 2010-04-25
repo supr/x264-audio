@@ -380,14 +380,15 @@ static void Help( x264_param_t *defaults, int longhelp )
              "                                                 stillimage,psnr,ssim\n"
              "                                  - other tunings: fastdecode,zerolatency\n" );
     H2( "      --slow-firstpass        Don't force these faster settings with --pass 1:\n"
-        "                                  --no-8x8dct --me dia --partitions none --ref 1\n"
-        "                                  --subme {2 if >2 else unchanged} --trellis 0\n" );
+        "                                  --no-8x8dct --me dia --partitions none\n"
+        "                                  --ref 1 --subme {2 if >2 else unchanged}\n"
+        "                                  --trellis 0 --fast-pskip\n" );
     else H1( "      --slow-firstpass        Don't force faster settings with --pass 1\n" );
     H0( "\n" );
     H0( "Frame-type options:\n" );
     H0( "\n" );
     H0( "  -I, --keyint <integer>      Maximum GOP size [%d]\n", defaults->i_keyint_max );
-    H2( "  -i, --min-keyint <integer>  Minimum GOP size [%d]\n", defaults->i_keyint_min );
+    H2( "  -i, --min-keyint <integer>  Minimum GOP size [auto]\n" );
     H2( "      --no-scenecut           Disable adaptive I-frame decision\n" );
     H2( "      --scenecut <integer>    How aggressively to insert extra I-frames [%d]\n", defaults->i_scenecut_threshold );
     H2( "      --intra-refresh         Use Periodic Intra Refresh instead of IDR frames\n" );
@@ -1327,6 +1328,7 @@ generic_option:
     info.interlaced = param->b_interlaced;
     info.sar_width  = param->vui.i_sar_width;
     info.sar_height = param->vui.i_sar_height;
+    info.tff        = param->b_tff;
     info.vfr        = param->b_vfr_input;
 
     if( select_input( demuxer, demuxername, input_filename, &opt->hin, &info, &input_opt ) )
@@ -1375,9 +1377,11 @@ generic_option:
     param->i_width     = info.width;
     if( !b_user_interlaced && info.interlaced )
     {
-        fprintf( stderr, "x264 [warning]: input appears to be interlaced, enabling interlaced mode.\n"
-                         "                If you want otherwise, use --no-interlaced\n" );
+        fprintf( stderr, "x264 [warning]: input appears to be interlaced, enabling %cff interlaced mode.\n"
+                         "                If you want otherwise, use --no-interlaced or --%cff\n",
+                 info.tff ? 't' : 'b', info.tff ? 'b' : 't' );
         param->b_interlaced = 1;
+        param->b_tff = !!info.tff;
     }
     if( !b_user_fps )
     {
@@ -1396,9 +1400,9 @@ generic_option:
     }
     if( !tcfile_name && input_opt.timebase )
     {
-        int i_user_timebase_num;
-        int i_user_timebase_den;
-        int ret = sscanf( input_opt.timebase, "%d/%d", &i_user_timebase_num, &i_user_timebase_den );
+        uint64_t i_user_timebase_num;
+        uint64_t i_user_timebase_den;
+        int ret = sscanf( input_opt.timebase, "%"SCNu64"/%"SCNu64, &i_user_timebase_num, &i_user_timebase_den );
         if( !ret )
         {
             fprintf( stderr, "x264 [error]: invalid argument: timebase = %s\n", input_opt.timebase );
@@ -1407,7 +1411,12 @@ generic_option:
         else if( ret == 1 )
         {
             i_user_timebase_num = param->i_timebase_num;
-            i_user_timebase_den = atoi( input_opt.timebase );
+            i_user_timebase_den = strtoul( input_opt.timebase, NULL, 10 );
+        }
+        if( i_user_timebase_num > UINT32_MAX || i_user_timebase_den > UINT32_MAX )
+        {
+            fprintf( stderr, "x264 [error]: timebase you specified exceeds H.264 maximum\n" );
+            return -1;
         }
         opt->timebase_convert_multiplier = ((double)i_user_timebase_den / param->i_timebase_den)
                                          * ((double)param->i_timebase_num / i_user_timebase_num);
