@@ -1383,6 +1383,16 @@ generic_option:
     video_info_t info = {0};
     char demuxername[5];
 
+#ifdef _WIN32
+#define realpath(rel,abs) _fullpath((abs),(rel),MAX_PATH)
+#endif
+    /* it is possible that the NULL trick does not work on some systems; guaranteed to work by MSDN and POSIX.1-2008 */
+    char *abs_input_path  = realpath(input_filename, NULL);
+    char *abs_output_path = realpath(output_filename, NULL);
+    FAIL_IF_ERROR( !strcasecmp( abs_input_path, abs_output_path ), "input and output files match, refusing to overwrite\n" );
+    free( abs_input_path );
+    free( abs_output_path );
+
     /* set info flags to param flags to be overwritten by demuxer as necessary. */
     info.csp        = param->i_csp;
     info.fps_num    = param->i_fps_num;
