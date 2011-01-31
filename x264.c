@@ -82,6 +82,8 @@ typedef struct {
     FILE *tcfile_out;
     double timebase_convert_multiplier;
     int i_pulldown;
+    char *output_filename;
+    cli_output_opt_t output_opt;
 } cli_opt_t;
 
 /* file i/o operation structs */
@@ -1152,10 +1154,6 @@ static int parse_enum_value( const char *arg, const char * const *names, int *ds
     return -1;
 }
 
-/* used to do output file creation only in the encode function */
-cli_output_opt_t output_opt;
-char *output_filename = NULL;
-
 static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
 {
     char *input_filename = NULL;
@@ -1178,7 +1176,7 @@ static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
     cli_log_level = defaults.i_log_level;
 
     memset( &input_opt, 0, sizeof(cli_input_opt_t) );
-    memset( &output_opt, 0, sizeof(cli_output_opt_t) );
+    memset( &opt->output_opt, 0, sizeof(cli_output_opt_t) );
     input_opt.bit_depth = 8;
     opt->b_progress = 1;
 
@@ -1236,7 +1234,7 @@ static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                 opt->i_seek = input_opt.seek = X264_MAX( atoi( optarg ), 0 );
                 break;
             case 'o':
-                output_filename = optarg;
+                opt->output_filename = optarg;
                 break;
             case OPT_MUXER:
                 FAIL_IF_ERROR( parse_enum_name( optarg, muxer_names, &muxer ), "Unknown muxer `%s'\n", optarg )
@@ -1332,7 +1330,7 @@ static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                 input_opt.bit_depth = atoi( optarg );
                 break;
             case OPT_DTS_COMPRESSION:
-                output_opt.use_dts_compress = 1;
+                opt->output_opt.use_dts_compress = 1;
                 break;
             default:
 generic_option:
@@ -1373,10 +1371,10 @@ generic_option:
         return -1;
 
     /* Get the file name */
-    FAIL_IF_ERROR( optind > argc - 1 || !output_filename, "No %s file. Run x264 --help for a list of options.\n",
+    FAIL_IF_ERROR( optind > argc - 1 || !opt->output_filename, "No %s file. Run x264 --help for a list of options.\n",
                    optind > argc - 1 ? "input" : "output" )
 
-    if( select_output( muxer, output_filename, param ) )
+    if( select_output( muxer, opt->output_filename, param ) )
         return -1;
 
     input_filename = argv[optind++];
@@ -1388,7 +1386,7 @@ generic_option:
 #endif
     /* it is possible that the NULL trick does not work on some systems; guaranteed to work by MSDN and POSIX.1-2008 */
     char *abs_input_path  = realpath(input_filename, NULL);
-    char *abs_output_path = realpath(output_filename, NULL);
+    char *abs_output_path = realpath(opt->output_filename, NULL);
     FAIL_IF_ERROR( !strcasecmp( abs_input_path, abs_output_path ), "input and output files match, refusing to overwrite\n" );
     free( abs_input_path );
     free( abs_output_path );
@@ -1674,7 +1672,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
 
     FAIL_IF_ERROR2( output.set_param( opt->hout, param ), "can't set outfile param\n" );
 
-    FAIL_IF_ERROR( output.open_file( output_filename, opt->hout, output_opt ), "could not open output file `%s'\n", output_filename );
+    FAIL_IF_ERROR( output.open_file( opt->output_filename, opt->hout, &opt->output_opt ), "could not open output file `%s'\n", opt->output_filename );
 
     i_start = x264_mdate();
     /* ticks/frame = ticks/second / frames/second */
