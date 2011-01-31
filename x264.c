@@ -1670,9 +1670,9 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
 
     x264_encoder_parameters( h, param );
 
-    FAIL_IF_ERROR2( output.set_param( opt->hout, param ), "can't set outfile param\n" );
-
     FAIL_IF_ERROR( output.open_file( opt->output_filename, opt->hout, &opt->output_opt ), "could not open output file `%s'\n", opt->output_filename );
+
+    FAIL_IF_ERROR2( output.set_param( opt->hout, param ), "can't set outfile param\n" );
 
     i_start = x264_mdate();
     /* ticks/frame = ticks/second / frames/second */
