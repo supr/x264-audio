@@ -1152,11 +1152,14 @@ static int parse_enum_value( const char *arg, const char * const *names, int *ds
     return -1;
 }
 
+/* used to do output file creation only in the encode function */
+cli_output_opt_t output_opt;
+char *output_filename = NULL;
+
 static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
 {
     char *input_filename = NULL;
     const char *demuxer = demuxer_names[0];
-    char *output_filename = NULL;
     const char *muxer = muxer_names[0];
     char *tcfile_name = NULL;
     x264_param_t defaults;
@@ -1168,7 +1171,6 @@ static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
     int b_user_fps = 0;
     int b_user_interlaced = 0;
     cli_input_opt_t input_opt;
-    cli_output_opt_t output_opt;
     char *preset = NULL;
     char *tune = NULL;
 
@@ -1376,7 +1378,6 @@ generic_option:
 
     if( select_output( muxer, output_filename, param ) )
         return -1;
-    FAIL_IF_ERROR( output.open_file( output_filename, &opt->hout, &output_opt ), "could not open output file `%s'\n", output_filename )
 
     input_filename = argv[optind++];
     video_info_t info = {0};
@@ -1662,6 +1663,8 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     x264_encoder_parameters( h, param );
 
     FAIL_IF_ERROR2( output.set_param( opt->hout, param ), "can't set outfile param\n" );
+
+    FAIL_IF_ERROR( output.open_file( output_filename, opt->hout, output_opt ), "could not open output file `%s'\n", output_filename );
 
     i_start = x264_mdate();
     /* ticks/frame = ticks/second / frames/second */
