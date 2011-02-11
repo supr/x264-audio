@@ -14,12 +14,13 @@ typedef struct x264_opt_s
 } x264_opt_t;
 
 enum opt_types {
-    OPT_TYPE_STRING = 0x00, // 's'
-    OPT_TYPE_BOOL   = 0x01, // 'b'
-    OPT_TYPE_INT    = 0x02, // 'i' or 'd'
-    OPT_TYPE_LONG   = 0x04, // 'l'
-    OPT_TYPE_FLOAT  = 0x08, // 'f'
-    OPT_TYPE_CODE   = 0x10  // 'c'
+    OPT_TYPE_FLAG   = 0x00  // none
+    OPT_TYPE_STRING = 0x01, // 's'
+    OPT_TYPE_BOOL   = 0x02, // 'b'
+    OPT_TYPE_INT    = 0x04, // 'i' or 'd'
+    OPT_TYPE_LONG   = 0x08, // 'l'
+    OPT_TYPE_FLOAT  = 0x10, // 'f'
+    OPT_TYPE_CODE   = 0x20  // 'c'
 };
 
 struct optparse_cache {
@@ -62,12 +63,19 @@ struct optparse_cache {
  * OPTION TYPE SPECIFIERS
  *
  * Every option_name argument is a string in the form "argument_name=type".
- * If omitted the "=type" part is assumed to be "=s".
+ *
+ * The "=type" part should not be present if the option is meant to be an
+ * argumentless flag; in that case x264_optparse will set option_value to true
+ * if the option_name is found at all and automatically adds a corresponding
+ * "noargument_name" version that sets the flag to false if found.
+ *
  * Here are the current types:
  *
+ * * (no specifier) - 'int'-sized boolean
+ *                    (presence is truth, presence of "no" variant is false)
  * * =s - string (just assigns the argument string to option_value)
- * * =b - boolean
- *        (assigns the argument string to option_value as a truth value (NULL = false))
+ * * =b - 'int'-sized boolean
+ *        ("true", "yes", "1" are true, everything else false)
  * * =i / =d - 'int'-sized integer
  * * =l - 'long long'-sized integer
  * * =f - double-sized floating point number
@@ -104,7 +112,10 @@ int x264_optparse( x264_opt_t *option_list, ... )
         cache[i].name = strdup( va_arg( ap, char* ) );
         cache[i].value = va_arg( ap, void* );
         char *split = strstr( cache[i].name, "=" );
-        if( split ) {
+
+        if( !split )
+            cache[i++].type = OPT_TYPE_FLAG;
+        else {
             *split++ = '\0';
             switch (*split) {
                 case 's':
@@ -138,6 +149,7 @@ int x264_optparse( x264_opt_t *option_list, ... )
     int named = 0;
     for( i = 0; o = iter; iter = iter->next, i++ ) {
         struct optparse_cache *op = NULL;
+        int flag = 1;
         if( o->name ) {
             int j;
             for( j = 0; cache[j].name; j++ )
@@ -146,6 +158,15 @@ int x264_optparse( x264_opt_t *option_list, ... )
                     break;
                 }
             if( !op ) {
+                for( j = 0; cache[j].name; j++ ) {
+                    if( cache[j].type == OPT_TYPE_FLAG ) {
+                        if( strstr( o->name, "no" ) == o->name &&
+                            !strcmp( cache[j].name, o->name + 2 ) {
+                            op = &cache[j];
+                            flag = 0;
+                        }
+                    }
+                }
                 fprintf( stderr, "Invalid option specified: no option named '%s'\n", o->name );
                 error = EINVAL;
                 goto tail;
@@ -164,6 +185,17 @@ int x264_optparse( x264_opt_t *option_list, ... )
         }
         
         switch( op->type ) {
+            case OPT_TYPE_FLAG:
+                *(int*)op->value = flag;
+                break;
+            case OPT_TYPE_STRING:
+                *(char**)op->value = o->strvalue;
+                break;
+            case OPT_TYPE_BOOL:
+                *(int*)op->value = !strcasecmp( str, "true" ) ||
+                                   !strcmp( str, "1" ) ||
+                                   !strcasecmp( str, "yes" );
+                break;
             case OPT_TYPE_INT:
                 *(int*)op->value = atoi( o->strvalue );
                 break;
@@ -172,10 +204,6 @@ int x264_optparse( x264_opt_t *option_list, ... )
                 break;
             case OPT_TYPE_FLOAT:
                 *(double*)op->value = atof( o->strvalue );
-                break;
-            case OPT_TYPE_BOOL:
-            case OPT_TYPE_STRING:
-                *(char**)op->value = o->strvalue;
                 break;
             case OPT_TYPE_CODE: {
                 void (*func)( x264_opt_t *self ) = op->value;
