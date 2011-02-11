@@ -110,6 +110,11 @@ int x264_optparse( x264_opt_t *option_list, ... )
     i = 0;
     while( i < aplen ) {
         cache[i].name = strdup( va_arg( ap, char* ) );
+        if( !cache[i].name ) {
+            fprintf( stderr, "out of memory!\n" );
+            error = ENOMEM;
+            goto tail;
+        }
         cache[i].value = va_arg( ap, void* );
         char *split = strstr( cache[i].name, "=" );
 
@@ -216,8 +221,9 @@ int x264_optparse( x264_opt_t *option_list, ... )
     }
 
 tail:
-    for( i = 0; cache[i].name ; i++ )
-        free( cache[i].name );
+    if( cache )
+        for( i = 0; cache[i].name; i++ )
+            free( cache[i].name );
     free( cache );
     if( error )
         return (error>0?-error:error);
