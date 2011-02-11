@@ -20,7 +20,6 @@ enum opt_types {
     OPT_TYPE_INT    = 0x04, // 'i' or 'd'
     OPT_TYPE_LONG   = 0x08, // 'l'
     OPT_TYPE_FLOAT  = 0x10, // 'f'
-    OPT_TYPE_CODE   = 0x20  // 'c'
 };
 
 struct optparse_cache {
@@ -79,8 +78,6 @@ struct optparse_cache {
  * * =i / =d - 'int'-sized integer
  * * =l - 'long long'-sized integer
  * * =f - double-sized floating point number
- * * =c - option_value is treated as a function that returns void and receives
- *        a x264_opt_t* and is called with its own matched option struct.
  */
 int x264_optparse( x264_opt_t *option_list, ... )
 {
@@ -138,9 +135,6 @@ int x264_optparse( x264_opt_t *option_list, ... )
                     break;
                 case 'f':
                     cache[i++].type = OPT_TYPE_FLOAT;
-                    break;
-                case 'c':
-                    cache[i++].type = OPT_TYPE_CODE;
                     break;
                 default:
                     fprintf( stderr, "Invalid option type specifier on %s\n", cache[i].name );
@@ -212,11 +206,6 @@ int x264_optparse( x264_opt_t *option_list, ... )
             case OPT_TYPE_FLOAT:
                 *(double*)op->value = atof( o->strvalue );
                 break;
-            case OPT_TYPE_CODE: {
-                void (*func)( x264_opt_t *self ) = op->value;
-                func( o );
-                break;
-            }
         }
     }
 
