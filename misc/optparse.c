@@ -13,11 +13,6 @@ typedef struct x264_opt_s
     struct x264_opt_s *next;
 } x264_opt_t;
 
-struct optparse_cache {
-    char *name;
-    x264_opt_t *pointer;
-};
-
 enum opt_types {
     OPT_TYPE_STRING = 0x00, // 's'
     OPT_TYPE_BOOL   = 0x01, // 'b'
@@ -25,6 +20,12 @@ enum opt_types {
     OPT_TYPE_LONG   = 0x04, // 'l'
     OPT_TYPE_FLOAT  = 0x08, // 'f'
     OPT_TYPE_CODE   = 0x10  // 'c'
+};
+
+struct optparse_cache {
+    char *name;
+    enum opt_types type;
+    void *value;
 };
 
 /*
@@ -78,123 +79,115 @@ int x264_optparse( x264_opt_t *option_list, ... )
     if( !option_list ) {
         return 0;
     }
-    va_list ap;
+    va_list ap, ap2;
     int error = 0;
-    int i;
+    int i, aplen;
     va_start( ap, option_list );
+    va_copy( ap2, ap );
     
-    /* CACHE - caches the named options in option_list to avoid doing *
-     *         a linked list linear search for each option verified.  *
-     *         Instead an array linear search will be done :)         */
+    /* CACHE - caches the va_list */
+    for( aplen = 0; va_arg( ap2, char* ); aplen++ ) {
+        va_arg( ap2, void* ); // only the key is checked for NULLness
+    }
+    va_end( ap2 );
+
     x264_opt_t *o = option_list;
-    struct optparse_cache *cache = malloc( sizeof( struct optparse_cache ) * 10 );
+    struct optparse_cache *cache = calloc( sizeof( struct optparse_cache ), (aplen+1)*2 );
+    // the last item in the cache will be NULL
     if( !cache ) {
         fprintf( stderr, "out of memory!\n" );
         error = ENOMEM;
         goto tail;
     }
     i = 0;
-    do {
-        if( !o->name ) {
-            o = o->next;
-            continue;
-        }
-        cache[i]  .name    = o->name;
-        cache[i++].pointer = o;
-        if( i >= 9 ) {
-            cache = realloc( cache, sizeof( struct optparse_cache ) * (i+1) );
-            if( !cache ) {
-                fprintf( stderr, "out of memory!\n" );
-                error = ENOMEM;
-                goto tail;
-            }
-        }
-        o = o->next;
-    } while( o );
-    cache[i] = (struct optparse_cache) {};
-    
-    x264_opt_t *iter = option_list;
-    o = NULL;
-    int named = 0;
-    for( i = 0; 1; i++ ) {
-        char *opname = va_arg( ap, char* );
-        if( !opname ) break; // end of list
-        void *opptr  = va_arg( ap, void* );
-        char *split = strstr( opname, "=" );
-        enum opt_types opt_type = OPT_TYPE_STRING;
-        if( split++ ) {
+    while( i < aplen ) {
+        cache[i].name = strdup( va_arg( ap, char* ) );
+        cache[i].value = va_arg( ap, void* );
+        char *split = strstr( cache[i].name, "=" );
+        if( split ) {
+            *split++ = '\0';
             switch (*split) {
-                case 's': // the default
+                case 's':
+                    cache[i++].type = OPT_TYPE_STRING;
                     break;
                 case 'b':
-                    opt_type = OPT_TYPE_BOOL;
+                    cache[i++].type = OPT_TYPE_BOOL;
                     break;
                 case 'i':
                 case 'd':
-                    opt_type = OPT_TYPE_INT;
+                    cache[i++].type = OPT_TYPE_INT;
                     break;
                 case 'l':
-                    opt_type = OPT_TYPE_LONG;
+                    cache[i++].type = OPT_TYPE_LONG;
                     break;
                 case 'f':
-                    opt_type = OPT_TYPE_FLOAT;
+                    cache[i++].type = OPT_TYPE_FLOAT;
                     break;
                 case 'c':
-                    opt_type = OPT_TYPE_CODE;
+                    cache[i++].type = OPT_TYPE_CODE;
                     break;
                 default:
-                    fprintf( stderr, "Invalid option type specifier on %s\n", opname );
+                    fprintf( stderr, "Invalid option type specifier on %s\n", cache[i].name );
                     error = EINVAL;
                     goto tail;
             }
         }
-        
-        if( cache[0].name ) {
+    }
+
+    x264_opt_t *iter = option_list;
+    int named = 0;
+    for( i = 0; o = iter; iter = iter->next, i++ ) {
+        struct optparse_cache *op = NULL;
+        if( o->name ) {
             int j;
             for( j = 0; cache[j].name; j++ )
-                if(! strcmp( cache[j].name, opname ) ) {
-                    o = cache[j].pointer;
-                    named = 1;
-                    // do not break, only the last argument passed should be used
+                if( !strcmp( cache[j].name, o->name ) ) {
+                    op = &cache[j];
+                    break;
                 }
-            if( !o ) {
-                if( named ) {
-                    fprintf( stderr, "Positional option received after named option\n" );
-                    error = EPERM;
-                    goto tail;
-                }
-                if( !iter ) {
-                    fprintf( stderr, "Too many arguments\n" );
-                    error = E2BIG;
-                    goto tail;
-                }
-                o = iter;
-                iter = iter->next;
+            if( !op ) {
+                fprintf( stderr, "Invalid option specified: no option named '%s'\n", o->name );
+                error = EINVAL;
+                goto tail;
             }
+            named = 1;
+        } else if( named ) {
+            fprintf( stderr, "Positional option received after named option\n" );
+            error = EPERM;
+            goto tail;
+        } else if( i >= aplen ) {
+            fprintf( stderr, "Too many arguments\n" );
+            error = E2BIG;
+            goto tail;
+        } else {
+            op = &cache[i];
         }
         
-        switch( opt_type ) {
+        switch( op->type ) {
             case OPT_TYPE_INT:
-                *(int*)opptr = atoi( o->strvalue );
+                *(int*)op->value = atoi( o->strvalue );
                 break;
             case OPT_TYPE_LONG:
-                *(long long*)opptr = atoll( o->strvalue );
+                *(long long*)op->value = atoll( o->strvalue );
                 break;
             case OPT_TYPE_FLOAT:
-                *(double*)opptr = atof( o->strvalue );
+                *(double*)op->value = atof( o->strvalue );
                 break;
             case OPT_TYPE_BOOL:
             case OPT_TYPE_STRING:
-                *(char**)opptr = o->strvalue;
+                *(char**)op->value = o->strvalue;
                 break;
             case OPT_TYPE_CODE: {
-                void (*func)( x264_opt_t *self ) = opptr;
+                void (*func)( x264_opt_t *self ) = op->value;
                 func( o );
                 break;
             }
         }
     }
-    tail:
+
+tail:
+    for( i = 0; cache[i].name ; i++ )
+        free( cache[i].name );
     free( cache );
     if( error )
         return (error>0?-error:error);
