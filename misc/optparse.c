@@ -55,6 +55,9 @@ enum opt_types {
  * option_list to reach its position in the argument list. Therefore, assign
  * default values to the variables before calling x264_optparse.
  *
+ * RETURNS
+ * The number of arguments parsed, or a forced-negative errno on error.
+ *
  * OPTION TYPE SPECIFIERS
  *
  * Every option_name argument is a string in the form "argument_name=type".
