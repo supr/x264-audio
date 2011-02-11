@@ -72,12 +72,12 @@ struct optparse_cache {
  *
  * * (no specifier) - 'int'-sized boolean
  *                    (presence is truth, presence of "no" variant is false)
- * * =s - string (just assigns the argument string to option_value)
+ * * =s - string (just assigns the argument directly to option_value)
  * * =b - 'int'-sized boolean
  *        ("true", "yes", "1" are true, everything else false)
  * * =i / =d - 'int'-sized integer
  * * =l - 'long long'-sized integer
- * * =f - double-sized floating point number
+ * * =f - 'double'-sized floating point number
  */
 int x264_optparse( x264_opt_t *option_list, ... )
 {
