@@ -17,7 +17,7 @@ enum opt_types {
     OPT_TYPE_FLAG,   // none
     OPT_TYPE_STRING, // 's'
     OPT_TYPE_BOOL,   // 'b'
-    OPT_TYPE_INT,    // 'i' or 'd'
+    OPT_TYPE_INT,    // 'd'
     OPT_TYPE_LONG,   // 'l'
     OPT_TYPE_FLOAT,  // 'f'
 };
@@ -75,7 +75,7 @@ struct optparse_cache {
  * * =s - string (just assigns the argument directly to option_value)
  * * =b - 'int'-sized boolean
  *        ("true", "yes", "1" are true, everything else false)
- * * =i / =d - 'int'-sized integer
+ * * =d - 'int'-sized integer
  * * =l - 'long long'-sized integer
  * * =f - 'double'-sized floating point number
  */
@@ -126,7 +126,6 @@ int x264_optparse( x264_opt_t *option_list, ... )
                 case 'b':
                     cache[i++].type = OPT_TYPE_BOOL;
                     break;
-                case 'i':
                 case 'd':
                     cache[i++].type = OPT_TYPE_INT;
                     break;
