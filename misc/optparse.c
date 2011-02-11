@@ -167,9 +167,11 @@ int x264_optparse( x264_opt_t *option_list, ... )
                         }
                     }
                 }
-                fprintf( stderr, "Invalid option specified: no option named '%s'\n", o->name );
-                error = EINVAL;
-                goto tail;
+                if( !op ) {
+                    fprintf( stderr, "Invalid option specified: no option named '%s'\n", o->name );
+                    error = EINVAL;
+                    goto tail;
+                }
             }
             named = 1;
         } else if( named ) {
