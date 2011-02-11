@@ -14,7 +14,7 @@ typedef struct x264_opt_s
 } x264_opt_t;
 
 enum opt_types {
-    OPT_TYPE_FLAG   = 0x00  // none
+    OPT_TYPE_FLAG   = 0x00, // none
     OPT_TYPE_STRING = 0x01, // 's'
     OPT_TYPE_BOOL   = 0x02, // 'b'
     OPT_TYPE_INT    = 0x04, // 'i' or 'd'
@@ -161,7 +161,7 @@ int x264_optparse( x264_opt_t *option_list, ... )
                 for( j = 0; cache[j].name; j++ ) {
                     if( cache[j].type == OPT_TYPE_FLAG ) {
                         if( strstr( o->name, "no" ) == o->name &&
-                            !strcmp( cache[j].name, o->name + 2 ) {
+                            !strcmp( cache[j].name, o->name + 2 ) ) {
                             op = &cache[j];
                             flag = 0;
                         }
@@ -192,9 +192,9 @@ int x264_optparse( x264_opt_t *option_list, ... )
                 *(char**)op->value = o->strvalue;
                 break;
             case OPT_TYPE_BOOL:
-                *(int*)op->value = !strcasecmp( str, "true" ) ||
-                                   !strcmp( str, "1" ) ||
-                                   !strcasecmp( str, "yes" );
+                *(int*)op->value = !strcasecmp( o->strvalue, "true" ) ||
+                                   !strcmp( o->strvalue, "1" ) ||
+                                   !strcasecmp( o->strvalue, "yes" );
                 break;
             case OPT_TYPE_INT:
                 *(int*)op->value = atoi( o->strvalue );
