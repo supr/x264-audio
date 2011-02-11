@@ -14,12 +14,12 @@ typedef struct x264_opt_s
 } x264_opt_t;
 
 enum opt_types {
-    OPT_TYPE_FLAG   = 0x00, // none
-    OPT_TYPE_STRING = 0x01, // 's'
-    OPT_TYPE_BOOL   = 0x02, // 'b'
-    OPT_TYPE_INT    = 0x04, // 'i' or 'd'
-    OPT_TYPE_LONG   = 0x08, // 'l'
-    OPT_TYPE_FLOAT  = 0x10, // 'f'
+    OPT_TYPE_FLAG,   // none
+    OPT_TYPE_STRING, // 's'
+    OPT_TYPE_BOOL,   // 'b'
+    OPT_TYPE_INT,    // 'i' or 'd'
+    OPT_TYPE_LONG,   // 'l'
+    OPT_TYPE_FLOAT,  // 'f'
 };
 
 struct optparse_cache {
