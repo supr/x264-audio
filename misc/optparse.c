@@ -13,7 +13,8 @@ typedef struct x264_opt_s
     struct x264_opt_s *next;
 } x264_opt_t;
 
-enum opt_types {
+enum opt_types
+{
     OPT_TYPE_FLAG,   // none
     OPT_TYPE_STRING, // 's'
     OPT_TYPE_BOOL,   // 'b'
@@ -22,7 +23,8 @@ enum opt_types {
     OPT_TYPE_FLOAT,  // 'f'
 };
 
-struct optparse_cache {
+struct optparse_cache
+{
     char *name;
     enum opt_types type;
     void *value;
@@ -85,9 +87,9 @@ struct optparse_cache {
  */
 x264_opt_t *x264_optparse( x264_opt_t *option_list, ... )
 {
-    if( !option_list ) {
+    if( !option_list )
         return 0;
-    }
+
     va_list ap, ap2;
     int error = 0;
     int i, aplen;
@@ -95,23 +97,25 @@ x264_opt_t *x264_optparse( x264_opt_t *option_list, ... )
     va_copy( ap2, ap );
     
     /* CACHE - caches the va_list */
-    for( aplen = 0; va_arg( ap2, char* ); aplen++ ) {
+    for( aplen = 0; va_arg( ap2, char* ); aplen++ )
         va_arg( ap2, void* ); // only the key is checked for NULLness
-    }
     va_end( ap2 );
 
     x264_opt_t *o = option_list;
     struct optparse_cache *cache = calloc( sizeof( struct optparse_cache ), (aplen+1)*2 );
     // the last item in the cache will be NULL
-    if( !cache ) {
+    if( !cache )
+    {
         fprintf( stderr, "out of memory!\n" );
         error = ENOMEM;
         goto tail;
     }
     i = 0;
-    while( i < aplen ) {
+    while( i < aplen )
+    {
         cache[i].name = strdup( va_arg( ap, char* ) );
-        if( !cache[i].name ) {
+        if( !cache[i].name )
+        {
             fprintf( stderr, "out of memory!\n" );
             error = ENOMEM;
             goto tail;
@@ -121,9 +125,11 @@ x264_opt_t *x264_optparse( x264_opt_t *option_list, ... )
 
         if( !split )
             cache[i++].type = OPT_TYPE_FLAG;
-        else {
+        else
+        {
             *split++ = '\0';
-            switch (*split) {
+            switch (*split)
+            {
                 case 's':
                     cache[i++].type = OPT_TYPE_STRING;
                     break;
@@ -149,40 +155,48 @@ x264_opt_t *x264_optparse( x264_opt_t *option_list, ... )
 
     x264_opt_t *iter = option_list;
     int named = 0;
-    for( i = 0; o = iter; iter = iter->next, i++ ) {
+    for( i = 0; o = iter; iter = iter->next, i++ )
+    {
         struct optparse_cache *op = NULL;
         int flag = 1;
         if( o->name ) {
             int j;
             for( j = 0; cache[j].name; j++ )
-                if( !strcmp( cache[j].name, o->name ) ) {
+                if( !strcmp( cache[j].name, o->name ) )
+                {
                     op = &cache[j];
                     break;
                 }
-            if( !op ) {
-                for( j = 0; cache[j].name; j++ ) {
-                    if( cache[j].type == OPT_TYPE_FLAG ) {
+            if( !op )
+            {
+                for( j = 0; cache[j].name; j++ )
+                {
+                    if( cache[j].type == OPT_TYPE_FLAG )
+                    {
                         if( strstr( o->name, "no" ) == o->name &&
-                            !strcmp( cache[j].name, o->name + 2 ) ) {
+                            !strcmp( cache[j].name, o->name + 2 ) )
+                        {
                             op = &cache[j];
                             flag = 0;
                         }
                     }
                 }
-                if( !op ) {
+                if( !op )
+                {
                     fprintf( stderr, "Invalid option specified: no option named '%s'\n", o->name );
                     error = EINVAL;
                     goto tail;
                 }
             }
             named = 1;
-        } else if( named || i >= aplen ) { // Possible variadic arguments
-            break; // should this validate that everything after is unnamed?
-        } else {
-            op = &cache[i];
         }
+        else if( named || i >= aplen ) // Possible variadic arguments
+            break; // Should this validate that everything after is unnamed?
+        else
+            op = &cache[i];
         
-        switch( op->type ) {
+        switch( op->type )
+        {
             case OPT_TYPE_FLAG:
                 *(int*)op->value = flag;
                 break;
@@ -211,7 +225,8 @@ tail:
         for( i = 0; cache[i].name; i++ )
             free( cache[i].name );
     free( cache );
-    if( error ) {
+    if( error )
+    {
         errno = error;
         return NULL;
     }
