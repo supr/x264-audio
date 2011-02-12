@@ -57,7 +57,11 @@ struct optparse_cache {
  * default values to the variables before calling x264_optparse.
  *
  * RETURNS
- * The number of arguments parsed, or a forced-negative errno on error.
+ * A pointer to the last x264_opt_t parsed or NULL on error.
+ *
+ * The returned value may not be the last in the linked list when there are
+ * more items than option_names or when an unnamed argument is given after a
+ * named one. This can be used to parse variadic arguments.
  *
  * OPTION TYPE SPECIFIERS
  *
@@ -79,7 +83,7 @@ struct optparse_cache {
  * * =l - 'long long'-sized integer
  * * =f - 'double'-sized floating point number
  */
-int x264_optparse( x264_opt_t *option_list, ... )
+x264_opt_t *x264_optparse( x264_opt_t *option_list, ... )
 {
     if( !option_list ) {
         return 0;
@@ -172,14 +176,8 @@ int x264_optparse( x264_opt_t *option_list, ... )
                 }
             }
             named = 1;
-        } else if( named ) {
-            fprintf( stderr, "Positional option received after named option\n" );
-            error = EPERM;
-            goto tail;
-        } else if( i >= aplen ) {
-            fprintf( stderr, "Too many arguments\n" );
-            error = E2BIG;
-            goto tail;
+        } else if( named || i >= aplen ) { // Possible variadic arguments
+            break; // should this validate that everything after is unnamed?
         } else {
             op = &cache[i];
         }
@@ -213,7 +211,9 @@ tail:
         for( i = 0; cache[i].name; i++ )
             free( cache[i].name );
     free( cache );
-    if( error )
-        return (error>0?-error:error);
-    return i;
+    if( error ) {
+        errno = error;
+        return NULL;
+    }
+    return o;
 }
